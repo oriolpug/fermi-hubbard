@@ -652,7 +652,7 @@ if __name__ == "__main__":
 
         sweep_results = []
         for total_qubits in SYSTEM_SIZES:
-            data = run_pipeline(total_qubits, run_gpu=False)
+            data = run_pipeline(total_qubits, run_gpu=GPU_ENABLED)
             sweep_results.append(data)
 
         plot_scaling_sweep(sweep_results)
