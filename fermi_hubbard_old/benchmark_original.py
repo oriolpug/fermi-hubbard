@@ -75,12 +75,11 @@ SAFETY_MARGIN = 5
 
 # Scaling sweep: total qubit counts to benchmark (each = 2 * N_SITES)
 # NOTE: For production runs, use [200, 500, 1000]. Reduced here for testing.
-SYSTEM_SIZES = [10,20,30,40,50]
+SYSTEM_SIZES = [100, 200]
 
 # GPU tier: enable with --gpu flag or set to True
 GPU_ENABLED = '--gpu' in sys.argv
-PAULI_PROP = '--pauli-propagation' in sys.argv
-RUN_SCALING = '--scaling' in sys.argv
+
 
 # =============================================================================
 # FERMI-HUBBARD MODEL
@@ -186,70 +185,18 @@ class FermiHubbardModel:
         qc.rz(q_down, 2.0 * angle)
         qc.cx(q_up, q_down)
 
-    def build_clifford_scout_circuit(self, steps, init_wall_idx):
-        """
-        Build a Clifford-only circuit for light-cone detection.
-
-        Instead of the full Trotterized time-evolution (which uses non-Clifford
-        Rz gates), this builds a circuit using only Clifford gates, compatible
-        with the Pauli Propagator backend.
-
-        To avoid saturating the entire chain (Clifford gates are "full strength"
-        unlike small-angle Rz), gates are only applied within an expanding
-        window around the domain wall. The window grows by 1 site per step,
-        mimicking the Lieb-Robinson causal light cone.
-
-        Clifford gates used: X (state prep), H, CX, CZ (all Clifford).
-        """
-        circuit = QuantumCircuit()
-
-        # ---- State Preparation: Domain Wall ----
-        for i in range(init_wall_idx):
-            circuit.x(i)
-            circuit.x(i + self.n_sites)
-
-        # ---- Clifford Proxy Steps with Expanding Light Cone ----
-        up_offset = 0
-        down_offset = self.n_sites
-
-        for step in range(steps):
-            # Window around domain wall, expanding by 1 site per step
-            lc_start = max(0, init_wall_idx - step - 1)
-            lc_end = min(self.n_sites, init_wall_idx + step + 2)
-
-            # Even hopping bonds within window
-            for i in range(max(0, lc_start), lc_end - 1, 2):
-                circuit.h(up_offset + i)
-                circuit.cx(up_offset + i, up_offset + i + 1)
-                circuit.h(up_offset + i)
-                circuit.h(down_offset + i)
-                circuit.cx(down_offset + i, down_offset + i + 1)
-                circuit.h(down_offset + i)
-
-            # Odd hopping bonds within window
-            for i in range(max(1, lc_start | 1), lc_end - 1, 2):
-                circuit.cx(up_offset + i, up_offset + i + 1)
-                circuit.cx(down_offset + i, down_offset + i + 1)
-
-            # On-site interaction within window
-            for i in range(lc_start, lc_end):
-                circuit.cz(up_offset + i, down_offset + i)
-
-        return circuit
-
 
 # =============================================================================
 # TIER 1: SCOUT (Pauli Propagator)
 # =============================================================================
 
-def run_scout(n_sites, total_qubits, init_wall_idx, pauli_prop=True):
+def run_scout(n_sites, total_qubits, init_wall_idx):
     """
     Tier 1: Fast light-cone detection using Pauli Propagator on the FULL system.
 
-    Uses a Clifford-only proxy circuit (required by the PP backend) that
-    preserves the connectivity structure of the Fermi-Hubbard Trotter circuit.
-    The Clifford proxy faithfully detects the light cone because it depends
-    on which qubits interact, not on rotation angles.
+    The Pauli Propagator is an approximate simulation method that efficiently
+    tracks how Pauli operators spread through a circuit. It can handle hundreds
+    of qubits in seconds, making it ideal for scanning large systems.
 
     We measure per-site ⟨Z_i⟩ and check where it deviates from the initial
     domain-wall configuration. Sites with |⟨Z⟩ - Z_initial| > threshold are
@@ -257,20 +204,18 @@ def run_scout(n_sites, total_qubits, init_wall_idx, pauli_prop=True):
 
     Returns (active_start, active_end) site indices.
     """
-    print(f"\n  Tier 1: Scout — Pauli Propagator (Clifford) on {total_qubits} qubits")
+    print(f"\n  Tier 1: Scout — Pauli Propagator on {total_qubits} qubits")
 
     scout_start_time = time.time()
 
-    # Clifford gates spread at maximal speed (~2 sites per step via even+odd
-    # bond layers). Calibrate steps to the Lieb-Robinson light cone:
-    #   light_cone_radius ≈ v_LR * T = 2t * T  (sites from domain wall)
-    #   steps_needed ≈ light_cone_radius / 2     (2 sites per step)
-    # This avoids saturating the entire chain while still detecting the
-    # full physical light cone. Add 1 extra step as safety.
-    light_cone_radius = 2.0 * T_HOP * T_EVOLUTION
-    scout_steps = max(2, int(light_cone_radius / 2) + 1)
+    # Use half the Trotter steps for speed (still captures the light cone)
+    scout_steps = max(4, N_STEPS // 2)
+    scout_dt = T_EVOLUTION / scout_steps
 
     model = FermiHubbardModel(n_sites, t=T_HOP, u=U_INT)
+    scout_circuit = model.build_circuit(
+        steps=scout_steps, dt=scout_dt, init_wall_idx=init_wall_idx
+    )
 
     # Build per-site Z observables
     obs_list = []
@@ -279,30 +224,11 @@ def run_scout(n_sites, total_qubits, init_wall_idx, pauli_prop=True):
         pauli[i] = 'Z'
         obs_list.append("".join(pauli))
 
-    if pauli_prop:
-        scout_circuit = model.build_clifford_scout_circuit(
-            steps=scout_steps, init_wall_idx=init_wall_idx
-        )
-
-
-        result = scout_circuit.estimate(
-            observables=obs_list,
-            simulator_type=maestro.SimulatorType.QCSim,
-            simulation_type=maestro.SimulationType.PauliPropagator,
-        )
-    else:
-        scout_steps = max(4, N_STEPS // 2)
-        dt = T_EVOLUTION / scout_steps
-        scout_circuit = model.build_circuit(
-            steps=scout_steps, dt=dt, init_wall_idx=init_wall_idx
-        )
-
-        result = scout_circuit.estimate(
-            observables=obs_list,
-            simulator_type=maestro.SimulatorType.QCSim,
-            simulation_type=maestro.SimulationType.MatrixProductState,
-            max_bond_dimension=2
-        )
+    result = scout_circuit.estimate(
+        observables=obs_list,
+        simulator_type=maestro.SimulatorType.QCSim,
+        simulation_type=maestro.SimulationType.PauliPropagator,
+    )
     z_vals = result['expectation_values']
     scout_elapsed = time.time() - scout_start_time
 
@@ -378,7 +304,7 @@ def run_sniper_cpu(n_sites, start, end, init_wall_idx, chi=CHI_CPU):
 # TIER 3: PRECISION (MPS GPU)
 # =============================================================================
 
-def run_precision_gpu(n_sites, start, end, init_wall_idx, chi=CHI_GPU, run_gpu=False):
+def run_precision_gpu(n_sites, start, end, init_wall_idx, chi=CHI_GPU):
     """
     Tier 3: MPS simulation on GPU with high bond dimension.
 
@@ -402,20 +328,12 @@ def run_precision_gpu(n_sites, start, end, init_wall_idx, chi=CHI_GPU, run_gpu=F
     obs_list = _build_z_observables(n_qubits)
 
     start_time = time.time()
-    if run_gpu:
-        result = circuit.estimate(
-            observables=obs_list,
-            simulator_type=maestro.SimulatorType.Gpu,
-            simulation_type=maestro.SimulationType.MatrixProductState,
-            max_bond_dimension=chi
-        )
-    else:
-        result = circuit.estimate(
-            observables=obs_list,
-            simulator_type=maestro.SimulatorType.QCSim,
-            simulation_type=maestro.SimulationType.MatrixProductState,
-            max_bond_dimension=chi
-        )
+    result = circuit.estimate(
+        observables=obs_list,
+        simulator_type=maestro.SimulatorType.Gpu,
+        simulation_type=maestro.SimulationType.MatrixProductState,
+        max_bond_dimension=chi
+    )
     elapsed = time.time() - start_time
 
     print(f"    Completed in {elapsed:.2f}s")
@@ -472,7 +390,7 @@ def run_pipeline(total_qubits, run_gpu=False):
     print(f"{'='*65}")
 
     # Tier 1: Scout
-    start, end, scout_time = run_scout(n_sites, total_qubits, init_wall_idx, pauli_prop=PAULI_PROP)
+    start, end, scout_time = run_scout(n_sites, total_qubits, init_wall_idx)
     n_active = end - start
 
     # Tier 2: MPS CPU
@@ -482,12 +400,13 @@ def run_pipeline(total_qubits, run_gpu=False):
     # Tier 3: MPS GPU (optional)
     gpu_density = None
     gpu_time = None
-    try:
-        gpu_vals, gpu_time = run_precision_gpu(n_sites, start, end, init_wall_idx, run_gpu=run_gpu)
-        gpu_density = _z_to_density(gpu_vals, n_active)
-    except Exception as e:
-        print(f"    GPU tier failed: {e}")
-        print(f"    (Run with a CUDA GPU or omit --gpu flag)")
+    if run_gpu:
+        try:
+            gpu_vals, gpu_time = run_precision_gpu(n_sites, start, end, init_wall_idx)
+            gpu_density = _z_to_density(gpu_vals, n_active)
+        except Exception as e:
+            print(f"    GPU tier failed: {e}")
+            print(f"    (Run with a CUDA GPU or omit --gpu flag)")
 
     return {
         'total_qubits': total_qubits,
@@ -645,39 +564,33 @@ if __name__ == "__main__":
     plot_density_profile(density_data)
 
     # ---- 2. Scaling Sweep (CPU tiers only for speed) ----
-    if RUN_SCALING:
-        print(f"\n\n{'#'*65}")
-        print(f"  SCALING SWEEP: {SYSTEM_SIZES}")
-        print(f"{'#'*65}")
+    print(f"\n\n{'#'*65}")
+    print(f"  SCALING SWEEP: {SYSTEM_SIZES}")
+    print(f"{'#'*65}")
 
-        sweep_results = []
-        for total_qubits in SYSTEM_SIZES:
-            data = run_pipeline(total_qubits, run_gpu=False)
-            sweep_results.append(data)
+    sweep_results = []
+    for total_qubits in SYSTEM_SIZES:
+        data = run_pipeline(total_qubits, run_gpu=False)
+        sweep_results.append(data)
 
-        plot_scaling_sweep(sweep_results)
+    plot_scaling_sweep(sweep_results)
 
     # ---- 3. Summary Table ----
-    precision_device = 'GPU' if GPU_ENABLED else 'CPU'
-    scout_method = 'PP' if PAULI_PROP else "MPS"
     print(f"\n\n{'='*75}")
     print(f"  BENCHMARK SUMMARY")
     print(f"  Physics: 1D Fermi-Hubbard, t={T_HOP}, U={U_INT} (U/t={U_INT/T_HOP:.1f}), T={T_EVOLUTION}")
     print(f"  Method:  Trotter ({N_STEPS} steps, dt={T_EVOLUTION/N_STEPS:.3f})")
-    print(f"  Tiers:   {scout_method} (scout) → MPS CPU (χ={CHI_CPU}) → MPS {precision_device} (χ={CHI_GPU})")
+    print(f"  Tiers:   PP (scout) → MPS CPU (χ={CHI_CPU}) → MPS GPU (χ={CHI_GPU})")
     print(f"{'='*75}")
     print(f"  {'System':>8s}  {'Active':>8s}  {'Ratio':>6s}  "
           f"{'Scout':>8s}  {'MPS CPU':>8s}  {'Total':>8s}")
-
-    if RUN_SCALING:
-        print(f"  {'─' * 8}  {'─' * 8}  {'─' * 6}  {'─' * 8}  {'─' * 8}  {'─' * 8}")
-        for r in sweep_results:
-            ratio = r['total_qubits'] / r['active_qubits'] if r['active_qubits'] > 0 else 0
-            total = r['scout_time'] + r['cpu_time']
-            print(f"  {r['total_qubits']:>6d}Q  {r['active_qubits']:>6d}Q  "
-                  f"{ratio:>5.0f}×  {r['scout_time']:>7.2f}s  "
-                  f"{r['cpu_time']:>7.2f}s  {total:>7.2f}s")
-
+    print(f"  {'─'*8}  {'─'*8}  {'─'*6}  {'─'*8}  {'─'*8}  {'─'*8}")
+    for r in sweep_results:
+        ratio = r['total_qubits'] / r['active_qubits'] if r['active_qubits'] > 0 else 0
+        total = r['scout_time'] + r['cpu_time']
+        print(f"  {r['total_qubits']:>6d}Q  {r['active_qubits']:>6d}Q  "
+              f"{ratio:>5.0f}×  {r['scout_time']:>7.2f}s  "
+              f"{r['cpu_time']:>7.2f}s  {total:>7.2f}s")
     print(f"{'='*75}")
 
     # GPU summary if available

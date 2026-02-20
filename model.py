@@ -1,3 +1,4 @@
+import numpy as np
 from maestro.circuits import QuantumCircuit
 
 
@@ -5,98 +6,123 @@ class FermiHubbardModel:
     """
     1D Fermi-Hubbard model with Jordan-Wigner mapping.
 
-    Qubit layout:
-      Qubits [0, N)     → spin-up electrons
-      Qubits [N, 2N)    → spin-down electrons
+    Qubits 0..N-1 encode spin-up, qubits N..2N-1 encode spin-down.
+    The Hamiltonian is:
+        H = -t Σ (c†_{i,σ} c_{i+1,σ} + h.c.) + U Σ n_{i,↑} n_{i,↓}
 
-    Hamiltonian:
-      H = -t Σ (c†_iσ c_{i+1,σ} + h.c.) + U Σ n_{i↑} n_{i↓}
-
-    Gate decompositions:
-      Hopping:     exp(-i dt t (XX + YY) / 2)  per bond
-      Interaction: exp(-i dt U (I - Z↑ - Z↓ + Z↑Z↓) / 4)  per site
+    Under Jordan-Wigner (nearest-neighbor, no Jordan-Wigner strings needed):
+        Hopping: exp(-i dt t (XX + YY) / 2)
+        Interaction: exp(-i dt U n_↑ n_↓)
+                   = exp(-i dt U/4 (I - Z_↑ - Z_↓ + Z_↑Z_↓))
     """
 
-    def __init__(self, n_sites, t=1.0, u=2.0):
+    def __init__(self, n_sites, t=1.0, u=4.0):
         self.n_sites = n_sites
-        self.t = t
-        self.u = u
+        self.t = t  # Hopping energy (Kinetic)
+        self.u = u  # Interaction energy (Potential)
+        self.n_qubits = 2 * n_sites
 
-    def build_circuit(self, steps, dt, init_wall_idx, active_sites_range=None):
+    def _add_hopping_term(self, circuit, q1, q2, dt):
         """
-        Build Trotterized time-evolution circuit.
+        Implements exp(-i * dt * t * (XX + YY) / 2) via:
+            exp(-i θ XX/2) · exp(-i θ YY/2)
 
-        Args:
-            steps: Number of Trotter steps.
-            dt: Time per step (= T_EVOLUTION / steps).
-            init_wall_idx: Global site index of domain wall.
-            active_sites_range: Optional (start, end) for subsystem simulation.
-        """
-        circuit = QuantumCircuit()
+        where θ = t * dt.
 
-        # ---- State Preparation: Domain Wall ----
-        offset = 0
-        if active_sites_range:
-            start_site, end_site = active_sites_range
-            offset = start_site
-            n_active = end_site - start_site
-            for local_i in range(n_active):
-                if local_i + offset < init_wall_idx:
-                    circuit.x(local_i)
-                    circuit.x(local_i + n_active)
-        else:
-            for i in range(init_wall_idx):
-                circuit.x(i)
-                circuit.x(i + self.n_sites)
+        Decomposition of exp(-i θ XX/2):
+            H(q1) H(q2) CX(q1,q2) Rz(q2, θ) CX(q1,q2) H(q1) H(q2)
 
-        # ---- Trotter Steps ----
-        n_active = self.n_sites if not active_sites_range else (active_sites_range[1] - active_sites_range[0])
-        up_offset = 0
-        down_offset = n_active
-
-        for _ in range(steps):
-            # Even bonds
-            for i in range(0, n_active - 1, 2):
-                self._add_hopping(circuit, up_offset + i, up_offset + i + 1, dt)
-                self._add_hopping(circuit, down_offset + i, down_offset + i + 1, dt)
-            # Odd bonds
-            for i in range(1, n_active - 1, 2):
-                self._add_hopping(circuit, up_offset + i, up_offset + i + 1, dt)
-                self._add_hopping(circuit, down_offset + i, down_offset + i + 1, dt)
-            # On-site interaction
-            for i in range(n_active):
-                self._add_interaction(circuit, up_offset + i, down_offset + i, dt)
-
-        return circuit
-
-    def _add_hopping(self, qc, q1, q2, dt):
-        """
-        exp(-i θ (XX + YY) / 2) where θ = t * dt.
-        Decomposed as exp(-iθ XX/2) · exp(-iθ YY/2).
+        Decomposition of exp(-i θ YY/2):
+            Sdg(q1) Sdg(q2) H(q1) H(q2) CX(q1,q2) Rz(q2, θ) CX(q1,q2) H(q1) H(q2) S(q1) S(q2)
         """
         theta = self.t * dt
 
-        # exp(-iθ XX/2): H-CX-Rz-CX-H
-        qc.h(q1); qc.h(q2)
-        qc.cx(q1, q2); qc.rz(q2, theta); qc.cx(q1, q2)
-        qc.h(q1); qc.h(q2)
+        # --- exp(-i θ XX/2) ---
+        circuit.h(q1)
+        circuit.h(q2)
+        circuit.cx(q1, q2)
+        circuit.rz(q2, theta)
+        circuit.cx(q1, q2)
+        circuit.h(q1)
+        circuit.h(q2)
 
-        # exp(-iθ YY/2): S†-H-CX-Rz-CX-H-S
-        qc.sdg(q1); qc.sdg(q2)
-        qc.h(q1); qc.h(q2)
-        qc.cx(q1, q2); qc.rz(q2, theta); qc.cx(q1, q2)
-        qc.h(q1); qc.h(q2)
-        qc.s(q1); qc.s(q2)
+        # --- exp(-i θ YY/2) ---
+        # Conjugate by S†: maps Y basis → X basis
+        circuit.sdg(q1)
+        circuit.sdg(q2)
+        circuit.h(q1)
+        circuit.h(q2)
+        circuit.cx(q1, q2)
+        circuit.rz(q2, theta)
+        circuit.cx(q1, q2)
+        circuit.h(q1)
+        circuit.h(q2)
+        circuit.s(q1)
+        circuit.s(q2)
 
-    def _add_interaction(self, qc, q_up, q_down, dt):
+    def _add_interaction_term(self, circuit, q_up, q_down, dt):
         """
-        exp(-i dt U n↑ n↓) where n = (I-Z)/2.
-        = exp(-i α) · exp(+iα Z↑) · exp(+iα Z↓) · exp(-iα Z↑Z↓)
-        with α = U·dt/4.
+        Implements exp(-i * dt * U * n_↑ n_↓) where n = (I - Z)/2.
+
+        Expanding: n_↑ n_↓ = (I - Z_↑ - Z_↓ + Z_↑Z_↓) / 4
+
+        So we need:
+            exp(-i * dt * U/4 * (I - Z_↑ - Z_↓ + Z_↑Z_↓))
+          = exp(-i dt U/4)                     [global phase, ignorable]
+          * exp(+i dt U/4 Z_↑)                [Rz on qubit ↑]
+          * exp(+i dt U/4 Z_↓)                [Rz on qubit ↓]
+          * exp(-i dt U/4 Z_↑Z_↓)             [ZZ interaction]
         """
         angle = self.u * dt / 4.0
-        qc.rz(q_up, -2.0 * angle)
-        qc.rz(q_down, -2.0 * angle)
-        qc.cx(q_up, q_down)
-        qc.rz(q_down, 2.0 * angle)
-        qc.cx(q_up, q_down)
+
+        # Single-qubit Z rotations: exp(+i angle Z) = Rz(-2*angle)
+        circuit.rz(q_up, -2.0 * angle)
+        circuit.rz(q_down, -2.0 * angle)
+
+        # ZZ interaction: exp(-i angle ZZ) via CX-Rz-CX
+        circuit.cx(q_up, q_down)
+        circuit.rz(q_down, 2.0 * angle)
+        circuit.cx(q_up, q_down)
+
+    def _prepare_domain_wall(self, circuit):
+        """Fill left half with UP and DOWN particles (domain wall state)."""
+        half = self.n_sites // 2
+        for i in range(half):
+            circuit.x(i)                # Spin UP (Qubits 0 to N-1)
+            circuit.x(i + self.n_sites)  # Spin DOWN (Qubits N to 2N-1)
+
+    def trotterize(self, time, steps, prepare_initial_state=True):
+        """
+        Build a second-order Trotterized time-evolution circuit.
+
+        Args:
+            time (float): Total simulation time.
+            steps (int): Number of Trotter steps.
+            prepare_initial_state (bool): Whether to prepend the domain wall state.
+        """
+        circuit = QuantumCircuit()
+
+        if prepare_initial_state:
+            self._prepare_domain_wall(circuit)
+
+        dt = time / steps
+
+        up_offset = 0
+        down_offset = self.n_sites
+
+        for _ in range(steps):
+            # Even bonds
+            for i in range(0, self.n_sites - 1, 2):
+                self._add_hopping_term(circuit, up_offset + i, up_offset + i + 1, dt)
+                self._add_hopping_term(circuit, down_offset + i, down_offset + i + 1, dt)
+
+            # Odd bonds
+            for i in range(1, self.n_sites - 1, 2):
+                self._add_hopping_term(circuit, up_offset + i, up_offset + i + 1, dt)
+                self._add_hopping_term(circuit, down_offset + i, down_offset + i + 1, dt)
+
+            # Interaction
+            for i in range(self.n_sites):
+                self._add_interaction_term(circuit, up_offset + i, down_offset + i, dt)
+
+        return circuit
