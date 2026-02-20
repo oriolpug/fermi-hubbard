@@ -257,7 +257,8 @@ def run_scout(n_sites, total_qubits, init_wall_idx, pauli_prop=True):
 
     Returns (active_start, active_end) site indices.
     """
-    print(f"\n  Tier 1: Scout — Pauli Propagator (Clifford) on {total_qubits} qubits")
+    scout_method = "Pauli Propagator (Clifford)" if pauli_prop else "MPS (Non-Clifford)"
+    print(f"\n  Tier 1: Scout — {scout_method} on {total_qubits} qubits")
 
     scout_start_time = time.time()
 
@@ -391,7 +392,8 @@ def run_precision_gpu(n_sites, start, end, init_wall_idx, chi=CHI_GPU, run_gpu=F
     """
     n_active = end - start
     n_qubits = 2 * n_active
-    print(f"\n  Tier 3: Precision — MPS GPU on {n_qubits} qubits (χ={chi})")
+    precision_device = "GPU" if run_gpu else "CPU"
+    print(f"\n  Tier 3: Precision — MPS {precision_device} on {n_qubits} qubits (χ={chi})")
 
     model = FermiHubbardModel(n_active, t=T_HOP, u=U_INT)
     circuit = model.build_circuit(
@@ -508,7 +510,7 @@ def run_pipeline(total_qubits, run_gpu=False):
 # VISUALIZATION
 # =============================================================================
 
-def plot_density_profile(data):
+def plot_density_profile(data, run_gpu):
     """
     Plot particle density across the lattice.
 
@@ -527,12 +529,13 @@ def plot_density_profile(data):
     ax.bar(global_x, data['cpu_density'], color='#2F847C', width=1.0, alpha=0.7,
            label=f'MPS CPU (χ={CHI_CPU}, {data["cpu_time"]:.1f}s)')
 
-    # GPU result (overlay if available)
+    # GPU result (overlay if available)\
+    precision_device = "GPU" if run_gpu else "CPU"
     if data['gpu_density'] is not None:
         ax.step(
             [x + 0.5 for x in global_x], data['gpu_density'],
             color='#E74C3C', linewidth=2, where='mid',
-            label=f'MPS GPU (χ={CHI_GPU}, {data["gpu_time"]:.1f}s)'
+            label=f'MPS {precision_device} (χ={CHI_GPU}, {data["gpu_time"]:.1f}s)'
         )
 
     # Frozen regions
@@ -589,7 +592,7 @@ def plot_scaling_sweep(results):
 
     # ---- Left: Time vs System Size ----
     ax1.plot(sizes, scout_times, 'o-', color='#3498DB', linewidth=2,
-             markersize=8, label='Tier 1: Scout (PP)')
+             markersize=8, label='Tier 1: Scout')
     ax1.plot(sizes, cpu_times, 's-', color='#E74C3C', linewidth=2,
              markersize=8, label=f'Tier 2: MPS CPU (χ={CHI_CPU})')
     ax1.plot(sizes, total_times, 'D-', color='#2C3E50', linewidth=2,
@@ -642,7 +645,7 @@ if __name__ == "__main__":
     # ---- 1. Density Profile: Full pipeline on the largest system ----
     largest = max(SYSTEM_SIZES)
     density_data = run_pipeline(largest, run_gpu=GPU_ENABLED)
-    plot_density_profile(density_data)
+    plot_density_profile(density_data, run_gpu=GPU_ENABLED)
 
     # ---- 2. Scaling Sweep (CPU tiers only for speed) ----
     if RUN_SCALING:
