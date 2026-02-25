@@ -641,6 +641,7 @@ def plot_time_comparison(data_cpu, data_gpu):
     Plots a bar chart comparing the elapsed times for each phase
     between a CPU-only simulation and a GPU-enabled simulation.
     Includes a visual gap and divider line to separate the 'Total Time'.
+    Only overlaps the Tier 3 and Total Time bars.
     """
     # Define the phases we are measuring
     phases = ['Scout', 'MPS CPU (Tier 2)', 'MPS GPU (Tier 3)', 'Total Time']
@@ -652,17 +653,18 @@ def plot_time_comparison(data_cpu, data_gpu):
     cpu_total = cpu_scout + cpu_tier2 + cpu_tier3
     cpu_times = [cpu_scout, cpu_tier2, cpu_tier3, cpu_total]
 
-    # Safely extract GPU run times
+    # Safely extract GPU run times (we still need the totals from the GPU run data)
     gpu_scout = data_gpu.get('scout_time') or 0
     gpu_tier2 = data_gpu.get('cpu_time') or 0
     gpu_tier3 = data_gpu.get('gpu_time') or 0
     gpu_total = gpu_scout + gpu_tier2 + gpu_tier3
-    gpu_times = [gpu_scout, gpu_tier2, gpu_tier3, gpu_total]
+
+    # Set the first two GPU times to 0 so they don't plot overlapping bars
+    gpu_times = [0, 0, gpu_tier3, gpu_total]
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
     # Create custom x positions to add a gap before the "Total Time" bar
-    # The normal spacing is 1 unit. We push the last bar to 3.5 instead of 3.
     x = np.array([0, 1, 2, 3.5])
 
     # Plot CPU bars first (wider, slightly transparent)
@@ -683,15 +685,20 @@ def plot_time_comparison(data_cpu, data_gpu):
     ax.grid(axis='y', linestyle='--', alpha=0.4)
 
     # Annotate the exact times slightly offset from the top of the bars
-    # We update the loop to use our custom 'x' positions
     max_height = max(cpu_total, gpu_total)
     for x_pos, cpu_val, gpu_val in zip(x, cpu_times, gpu_times):
-        if cpu_val > 0:
-            ax.text(x_pos - 0.15, cpu_val + max_height * 0.01, f'{cpu_val:.1f}s',
+        # If there is no GPU overlap (Scout & Tier 2), center the CPU text
+        if gpu_val == 0 and cpu_val > 0:
+            ax.text(x_pos, cpu_val + max_height * 0.01, f'{cpu_val:.1f}s',
                     color='#7F8C8D', fontweight='bold', ha='center', fontsize=10)
-        if gpu_val > 0:
-            ax.text(x_pos + 0.15, gpu_val + max_height * 0.01, f'{gpu_val:.1f}s',
-                    color='#C0392B', fontweight='bold', ha='center', fontsize=10)
+        else:
+            # If there is an overlap (Tier 3 & Total), offset both labels side-by-side
+            if cpu_val > 0:
+                ax.text(x_pos - 0.15, cpu_val + max_height * 0.01, f'{cpu_val:.1f}s',
+                        color='#7F8C8D', fontweight='bold', ha='center', fontsize=10)
+            if gpu_val > 0:
+                ax.text(x_pos + 0.15, gpu_val + max_height * 0.01, f'{gpu_val:.1f}s',
+                        color='#C0392B', fontweight='bold', ha='center', fontsize=10)
 
     fig.tight_layout()
     fig.savefig('adaptive_hubbard_time_comparison.png', dpi=150)
