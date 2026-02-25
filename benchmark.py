@@ -76,7 +76,7 @@ SAFETY_MARGIN = 5
 
 # Scaling sweep: total qubit counts to benchmark (each = 2 * N_SITES)
 # NOTE: For production runs, use [200, 500, 1000]. Reduced here for testing.
-SYSTEM_SIZES = [50]
+SYSTEM_SIZES = [200]
 
 # GPU tier: enable with --gpu flag or set to True
 GPU_ENABLED = '--gpu' in sys.argv
