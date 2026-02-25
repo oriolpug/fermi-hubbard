@@ -43,6 +43,7 @@ Usage:
 
 import sys
 import time
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import maestro
@@ -75,12 +76,13 @@ SAFETY_MARGIN = 5
 
 # Scaling sweep: total qubit counts to benchmark (each = 2 * N_SITES)
 # NOTE: For production runs, use [200, 500, 1000]. Reduced here for testing.
-SYSTEM_SIZES = [10,20,30,40,50]
+SYSTEM_SIZES = [50]
 
 # GPU tier: enable with --gpu flag or set to True
 GPU_ENABLED = '--gpu' in sys.argv
 PAULI_PROP = '--pauli-propagation' in sys.argv
 RUN_SCALING = '--scaling' in sys.argv
+PLOT_COMPARE = '--compare' in sys.argv
 
 # =============================================================================
 # FERMI-HUBBARD MODEL
@@ -634,6 +636,67 @@ def plot_scaling_sweep(results):
     print("Saved adaptive_hubbard_scaling.png")
 
 
+def plot_time_comparison(data_cpu, data_gpu):
+    """
+    Plots a bar chart comparing the elapsed times for each phase
+    between a CPU-only simulation and a GPU-enabled simulation.
+    Includes a visual gap and divider line to separate the 'Total Time'.
+    """
+    # Define the phases we are measuring
+    phases = ['Scout', 'MPS CPU (Tier 2)', 'MPS GPU (Tier 3)', 'Total Time']
+
+    # Safely extract CPU run times
+    cpu_scout = data_cpu.get('scout_time') or 0
+    cpu_tier2 = data_cpu.get('cpu_time') or 0
+    cpu_tier3 = data_cpu.get('gpu_time') or 0
+    cpu_total = cpu_scout + cpu_tier2 + cpu_tier3
+    cpu_times = [cpu_scout, cpu_tier2, cpu_tier3, cpu_total]
+
+    # Safely extract GPU run times
+    gpu_scout = data_gpu.get('scout_time') or 0
+    gpu_tier2 = data_gpu.get('cpu_time') or 0
+    gpu_tier3 = data_gpu.get('gpu_time') or 0
+    gpu_total = gpu_scout + gpu_tier2 + gpu_tier3
+    gpu_times = [gpu_scout, gpu_tier2, gpu_tier3, gpu_total]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Create custom x positions to add a gap before the "Total Time" bar
+    # The normal spacing is 1 unit. We push the last bar to 3.5 instead of 3.
+    x = np.array([0, 1, 2, 3.5])
+
+    # Plot CPU bars first (wider, slightly transparent)
+    ax.bar(x, cpu_times, width=0.6, label='CPU Run', color='#95A5A6', alpha=0.7)
+
+    # Plot GPU bars second so they render on top (narrower, solid)
+    ax.bar(x, gpu_times, width=0.35, label='GPU Run', color='#E74C3C', alpha=0.9)
+
+    # Add a vertical divider line to separate phases from the total
+    ax.axvline(x=2.75, color='#BDC3C7', linestyle='--', linewidth=2)
+
+    # Formatting the chart
+    ax.set_ylabel('Elapsed Time (seconds)', fontsize=12)
+    ax.set_title(f'Execution Time by Phase ({data_cpu["total_qubits"]}-Qubit System)', fontsize=14)
+    ax.set_xticks(x)
+    ax.set_xticklabels(phases, fontsize=11)
+    ax.legend(loc='upper left')
+    ax.grid(axis='y', linestyle='--', alpha=0.4)
+
+    # Annotate the exact times slightly offset from the top of the bars
+    # We update the loop to use our custom 'x' positions
+    max_height = max(cpu_total, gpu_total)
+    for x_pos, cpu_val, gpu_val in zip(x, cpu_times, gpu_times):
+        if cpu_val > 0:
+            ax.text(x_pos - 0.15, cpu_val + max_height * 0.01, f'{cpu_val:.1f}s',
+                    color='#7F8C8D', fontweight='bold', ha='center', fontsize=10)
+        if gpu_val > 0:
+            ax.text(x_pos + 0.15, gpu_val + max_height * 0.01, f'{gpu_val:.1f}s',
+                    color='#C0392B', fontweight='bold', ha='center', fontsize=10)
+
+    fig.tight_layout()
+    fig.savefig('adaptive_hubbard_time_comparison.png', dpi=150)
+    print("\nSaved adaptive_hubbard_time_comparison.png")
+
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -646,6 +709,10 @@ if __name__ == "__main__":
     largest = max(SYSTEM_SIZES)
     density_data = run_pipeline(largest, run_gpu=GPU_ENABLED)
     plot_density_profile(density_data, run_gpu=GPU_ENABLED)
+
+    if PLOT_COMPARE:
+        density_data_cpu = run_pipeline(largest, run_gpu=False)
+        plot_time_comparison(density_data_cpu, density_data)
 
     # ---- 2. Scaling Sweep (CPU tiers only for speed) ----
     if RUN_SCALING:
