@@ -31,32 +31,16 @@ def expect_pennylane(config: dict = None, chi: int = 64) -> None:
     # Build circuit with expectation values
     if "--gpu" in sys.argv:
         dev = qml.device("lightning.tensor", wires=num_qubits, method="mps", max_bond_dim=chi)
-        unsupported = [op for op in qml_tape.operations if op.name not in dev.operations]
-        if unsupported:
-            from collections import Counter
-            counts = Counter(op.name for op in unsupported)
-            print(f"WARNING: {len(unsupported)} unsupported ops (will force computeState): {dict(counts)}")
     else:
         dev = qml.device("default.tensor", wires=num_qubits, method="mps", max_bond_dim=chi)
 
-    if "--gpu" in sys.argv:
-        @qml.qnode(dev)
-        def circuit():
-            qml_circuit()
-            return qml.sample(wires=range(num_qubits))
+    @qml.qnode(dev)
+    def circuit():
+        qml_circuit()
+        return [qml.expval(qml.PauliZ(i)) for i in range(num_qubits)]
 
-        start = time.time()
-        samples = circuit(shots=1000)
-        result = 1 - 2 * samples.mean(axis=0)
-    else:
-        @qml.qnode(dev)
-        def circuit():
-            qml_circuit()
-            return [qml.expval(qml.PauliZ(i)) for i in range(num_qubits)]
-
-        start = time.time()
-        result = circuit()
-
+    start = time.time()
+    result = circuit()
     elapsed = time.time() - start
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
