@@ -43,7 +43,7 @@ def expect_pennylane(config: dict = None, chi: int = 64) -> None:
         @qml.qnode(dev)
         def circuit(i):
             qml_circuit()
-            return qml.expval(qml.Z(i))
+            return qml.expval(qml.PauliZ(i))
 
         start = time.time()
         result = [circuit(i) for i in range(num_qubits)]
