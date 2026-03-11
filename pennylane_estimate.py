@@ -7,7 +7,7 @@ import sys
 from benchmark import _build_z_observables
 from generate_qasm import generate_qasm_circuit
 import pennylane as qml
-
+" chi = 64:   Completed in 24452.86s -> from VM"
 def build_pennylane_observables(n_qubits):
     """Build per-qubit Z observables: ['ZIII..', 'IZII..', 'IIZI..', ...]"""
     obs = []
@@ -34,13 +34,23 @@ def expect_pennylane(config: dict = None, chi: int = 64) -> None:
     else:
         dev = qml.device("default.tensor", wires=num_qubits, method="mps", max_bond_dim=chi)
 
-    @qml.qnode(dev)
-    def circuit():
-        qml_circuit()
-        return [qml.expval(qml.PauliZ(i)) for i in range(num_qubits)]
+    if "--gpu" in sys.argv:
+        @qml.qnode(dev)
+        def circuit(qubit):
+            qml_circuit()
+            return qml.expval(qml.PauliZ(qubit))
 
-    start = time.time()
-    result = circuit()
+        start = time.time()
+        result = [circuit(i) for i in range(num_qubits)]
+    else:
+        @qml.qnode(dev)
+        def circuit():
+            qml_circuit()
+            return [qml.expval(qml.PauliZ(i)) for i in range(num_qubits)]
+
+        start = time.time()
+        result = circuit()
+
     elapsed = time.time() - start
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
