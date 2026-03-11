@@ -7,6 +7,7 @@ import sys
 from benchmark import _build_z_observables
 from generate_qasm import generate_qasm_circuit
 import pennylane as qml
+import numpy as np
 
 import maestro
 from benchmark import _build_z_observables
@@ -32,26 +33,37 @@ def expect_pennylane(config: dict = None, chi: int = 64) -> None:
 
     num_qubits = len(qml_tape.wires)
 
-    # Build circuit with expectation values
-    if "--gpu" in sys.argv:
-        dev = qml.device("lightning.tensor", wires=num_qubits, method="mps", max_bond_dim=chi)
-    else:
-        dev = qml.device("default.tensor", wires=num_qubits, method="mps", max_bond_dim=chi)
-
     observables = [qml.Z(i) for i in range(num_qubits)]
     grouped_obs = qml.pauli.group_observables(observables)
 
-    @qml.qnode(dev)
-    def circuit(group):
-        qml_circuit()
-        return [qml.expval(obs) for obs in group[0]]
+    # Build circuit with expectation values
+    if "--gpu" in sys.argv:
+        dev = qml.device("lightning.tensor", wires=num_qubits, method="mps", max_bond_dim=chi, shots=10000)
 
-    start = time.time()
-    result = circuit(grouped_obs)
-    elapsed = time.time() - start
+        @qml.qnode(dev)
+        def circuit(group):
+            qml_circuit()
+            return qml.sample(wires=[i for i in range(num_qubits)])
+
+        start = time.time()
+        samples = circuit(grouped_obs)
+        result = 1 - 2 * samples
+        result = np.mean(result, axis=0)
+        elapsed = time.time() - start
+    else:
+        dev = qml.device("default.tensor", wires=num_qubits, method="mps", max_bond_dim=chi)
+
+        @qml.qnode(dev)
+        def circuit():
+            qml_circuit()
+            return [qml.expval(qml.Z(i)) for i in range(num_qubits)]
+
+        start = time.time()
+        result = circuit()
+        elapsed = time.time() - start
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
-    print(f"    expectation value: {result}")
+    print(f"    expectation values: {result}")
 
     return elapsed
 
@@ -72,7 +84,7 @@ def expect_maestro(config: dict = None, chi: int = 64) -> None:
     elapsed = time.time() - start
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
-    print(f"    expectation value: {result}")
+    print(f"    expectation values: {result}")
 
     return elapsed
 if __name__ == "__main__":
