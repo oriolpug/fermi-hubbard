@@ -77,6 +77,7 @@ def expect_maestro(config: dict = None, chi: int = 64) -> None:
     return elapsed
 if __name__ == "__main__":
     try:
+        print(sys.argv)
         if len(sys.argv) == 0 or (len(sys.argv) == 1 and sys.argv[0] in ["--gpu", "--pennylane"]) or (len(sys.argv) == 2 and "--pennylane" in sys.argv):
             print(f"Benchmarking Pennylane")
             expect_pennylane(chi=64)
