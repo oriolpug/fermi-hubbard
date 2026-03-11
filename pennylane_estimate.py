@@ -41,12 +41,13 @@ def expect_pennylane(config: dict = None, chi: int = 64) -> None:
 
     if "--gpu" in sys.argv:
         @qml.qnode(dev)
-        def circuit(qubit):
+        def circuit():
             qml_circuit()
-            return qml.expval(qml.PauliZ(qubit))
+            return qml.sample(wires=range(num_qubits))
 
         start = time.time()
-        result = [circuit(i) for i in range(num_qubits)]
+        samples = circuit(shots=1000)
+        result = 1 - 2 * samples.mean(axis=0)
     else:
         @qml.qnode(dev)
         def circuit():
