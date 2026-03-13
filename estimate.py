@@ -7,6 +7,7 @@ import sys
 from benchmark import _build_z_observables
 from generate_qasm import generate_qasm_circuit
 import pennylane as qml
+import qibo
 import numpy as np
 
 import maestro
@@ -33,8 +34,6 @@ def expect_pennylane(config: dict = None, chi: int = 64) -> None:
 
     num_qubits = len(qml_tape.wires)
 
-    observables = [qml.Z(i) for i in range(num_qubits)]
-    grouped_obs = qml.pauli.group_observables(observables)
 
     # Build circuit with expectation values
     if "--gpu" in sys.argv:
@@ -46,24 +45,68 @@ def expect_pennylane(config: dict = None, chi: int = 64) -> None:
             return qml.expval(qml.PauliZ(i))
 
         start = time.time()
-        result = [circuit(i) for i in range(num_qubits)]
+        result = circuit(num_qubits // 2)
         elapsed = time.time() - start
     else:
         dev = qml.device("default.tensor", wires=num_qubits, method="mps", max_bond_dim=chi)
 
         @qml.qnode(dev)
-        def circuit():
+        def circuit(i):
             qml_circuit()
-            return [qml.expval(qml.Z(i)) for i in range(num_qubits)]
+            return qml.expval(qml.Z(i))
 
         start = time.time()
-        result = circuit()
+        result = circuit(num_qubits // 2)
         elapsed = time.time() - start
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
     print(f"    expectation values: {result}")
 
-    return elapsed
+    return
+
+def expect_qibo(config: dict = None, chi: int = 64) -> None:
+    qasm = generate_qasm_circuit()
+    qibo_circuit = qibo.Circuit.from_qasm(qasm)
+
+    obs = _build_z_observables(qibo_circuit.nqubits)
+    obs = obs[qibo_circuit.nqubits // 2]
+
+    computation_settings = {
+        "MPS_enabled": {
+            "svd_method": {
+                "abs_cutoff": 0,  # Truncates singular values below this
+                "max_extent": chi  # The max bond dimension limit
+            }
+        },
+        "expectation_enabled": {}
+    }
+    #
+    # computation_settings = {
+    #     "MPS_enabled": {
+    #         "cutoff": 0,  # Quimb uses 'cutoff', not 'abs_cutoff'
+    #         "max_bond": chi  # Quimb uses 'max_bond'
+    #     },
+    #     # Leave this empty to populate it in your loop
+    #     "expectation_enabled": {}
+    # }
+    if "--gpu" in sys.argv:
+        qibo.set_device("/GPU:0")
+    else:
+        qibo.set_device("/CPU:0")
+
+    result = {}
+    computation_settings["expectation_enabled"]["pauli_string_pattern"] = obs
+    qibo.set_backend(
+        backend="qibotn",
+        platform="qutensornet",
+        runcard=computation_settings
+    )
+    start = time.time()
+    result = qibo_circuit()
+    elapsed = time.time() - start
+
+    print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
+    print(f"    expectation values: {result}")
 
 def expect_maestro(config: dict = None, chi: int = 64) -> None:
     qasm = generate_qasm_circuit()
@@ -71,6 +114,7 @@ def expect_maestro(config: dict = None, chi: int = 64) -> None:
     maestro_circuit = parser.parse_and_translate(qasm)
 
     obs = _build_z_observables(maestro_circuit.num_qubits)
+    obs = obs[len(obs)//2]
 
     start = time.time()
     result = maestro_circuit.estimate(
@@ -87,7 +131,6 @@ def expect_maestro(config: dict = None, chi: int = 64) -> None:
     return elapsed
 if __name__ == "__main__":
     try:
-        print(sys.argv)
         if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] in ["--gpu", "--pennylane"]) or (len(sys.argv) > 2 and "--pennylane" in sys.argv):
             print(f"Benchmarking Pennylane")
             expect_pennylane(chi=64)
@@ -97,5 +140,10 @@ if __name__ == "__main__":
             print(f"Benchmarking Maestro")
             expect_maestro(chi=64)
             expect_maestro(chi=256)
+
+        if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] in ["--gpu", "--qibo"]) or (len(sys.argv) > 2 and "--qibo" in sys.argv):
+            print(f"Benchmarking Qibo")
+            expect_qibo(chi=64)
+            expect_qibo(chi=256)
     except Exception as e:
         print(e)
