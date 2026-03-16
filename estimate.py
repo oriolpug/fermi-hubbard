@@ -65,6 +65,11 @@ def expect_pennylane(config: dict = None, chi: int = 64) -> None:
     return
 
 def expect_qibo(config: dict = None, chi: int = 64) -> None:
+    if "--gpu" in sys.argv:
+        qibo.set_device("/GPU:0")
+    else:
+        qibo.set_device("/CPU:0")
+
     qasm = generate_qasm_circuit()
     qibo_circuit = qibo.Circuit.from_qasm(qasm)
 
@@ -89,12 +94,8 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
     #     # Leave this empty to populate it in your loop
     #     "expectation_enabled": {}
     # }
-    if "--gpu" in sys.argv:
-        qibo.set_device("/GPU:0")
-    else:
-        qibo.set_device("/CPU:0")
 
-    result = {}
+
     computation_settings["expectation_enabled"]["pauli_string_pattern"] = obs
     qibo.set_backend(
         backend="qibotn",
