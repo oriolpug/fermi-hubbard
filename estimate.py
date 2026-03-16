@@ -9,6 +9,7 @@ from generate_qasm import generate_qasm_circuit
 import pennylane as qml
 import qibo
 import numpy as np
+from qiskit import QuantumCircuit
 
 import maestro
 from benchmark import _build_z_observables
@@ -65,16 +66,11 @@ def expect_pennylane(config: dict = None, chi: int = 64) -> None:
     return
 
 def expect_qibo(config: dict = None, chi: int = 64) -> None:
-    if "--gpu" in sys.argv:
-        qibo.set_device("/GPU:0")
-    else:
-        qibo.set_device("/CPU:0")
-
     qasm = generate_qasm_circuit()
-    qibo_circuit = qibo.Circuit.from_qasm(qasm)
+    num_qubits = QuantumCircuit.from_qasm_str(qasm).num_qubits
 
-    obs = _build_z_observables(qibo_circuit.nqubits)
-    obs = obs[qibo_circuit.nqubits // 2]
+    obs = _build_z_observables(num_qubits)
+    obs = obs[num_qubits // 2]
 
     computation_settings = {
         "MPS_enabled": {
@@ -85,6 +81,20 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
         },
         "expectation_enabled": {}
     }
+
+    computation_settings["expectation_enabled"]["pauli_string_pattern"] = obs
+    qibo.set_backend(
+        backend="qibotn",
+        platform="cutensornet",
+        runcard=computation_settings
+    )
+
+    if "--gpu" in sys.argv:
+        qibo.set_device("/GPU:0")
+    else:
+        qibo.set_device("/CPU:0")
+
+    qibo_circuit = qibo.Circuit.from_qasm(qasm)
     #
     # computation_settings = {
     #     "MPS_enabled": {
@@ -96,12 +106,7 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
     # }
 
 
-    computation_settings["expectation_enabled"]["pauli_string_pattern"] = obs
-    qibo.set_backend(
-        backend="qibotn",
-        platform="qutensornet",
-        runcard=computation_settings
-    )
+
     start = time.time()
     result = qibo_circuit()
     elapsed = time.time() - start
