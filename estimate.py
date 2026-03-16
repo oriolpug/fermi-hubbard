@@ -6,12 +6,8 @@ import sys
 
 from benchmark import _build_z_observables
 from generate_qasm import generate_qasm_circuit
-import pennylane as qml
-import qibo
-import numpy as np
 from qiskit import QuantumCircuit
 
-import maestro
 from benchmark import _build_z_observables
 
 " chi = 64:   Completed in 24452.86s -> from VM"
@@ -139,16 +135,19 @@ if __name__ == "__main__":
     try:
         if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] in ["--gpu", "--pennylane"]) or (len(sys.argv) > 2 and "--pennylane" in sys.argv):
             print(f"Benchmarking Pennylane")
+            import pennylane as qml
             expect_pennylane(chi=64)
             expect_pennylane(chi=256)
 
         if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] in ["--gpu", "--maestro"]) or (len(sys.argv) > 2 and "--maestro" in sys.argv):
             print(f"Benchmarking Maestro")
+            import maestro
             expect_maestro(chi=64)
             expect_maestro(chi=256)
 
         if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] in ["--gpu", "--qibo"]) or (len(sys.argv) > 2 and "--qibo" in sys.argv):
             print(f"Benchmarking Qibo")
+            import qibo
             expect_qibo(chi=64)
             expect_qibo(chi=256)
     except Exception as e:
