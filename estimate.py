@@ -125,15 +125,15 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
     from qibo.symbols import Z
     from qibo.hamiltonians import SymbolicHamiltonian
 
-    qibo_obs = SymbolicHamiltonian(
-        Z(num_qubits//2),
+    qibo_obs = [SymbolicHamiltonian(
+        Z(i),
         nqubits=num_qubits,
         backend=cpu_backend
-    )
+    ) for i in range(num_qubits)]
 
     # FIX: Cast the CuPy GPU array back to a host NumPy array for the CPU backend.
     cpu_state = cp.asnumpy(raw_state_vector)
-    result = float(qibo_obs.expectation(cpu_state, normalize=True).real)
+    result = [float(qibo_obs[i].expectation(cpu_state, normalize=True).real) for i in range(num_qubits)]
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
     print(f"    expectation values: {result}")
