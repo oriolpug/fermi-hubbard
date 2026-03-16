@@ -72,12 +72,15 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
     obs = obs[num_qubits // 2]
 
     computation_settings = {
+        "MPI_enabled": False,
+        "NCCL_enabled": False,
+        "expectation_enabled": False,
         "MPS_enabled": {
             "svd_method": {
-                "abs_cutoff": 0,  # Truncates singular values below this
-                "max_extent": chi  # The max bond dimension limit
+                "abs_cutoff": 0.0,
+                "max_extent": chi
             }
-        },
+        }
     }
 
     import qibotn.backends.cutensornet
