@@ -144,9 +144,6 @@ def expect_maestro(config: dict = None, chi: int = 64) -> None:
     maestro_circuit = parser.parse_and_translate(qasm)
 
     obs = _build_z_observables(maestro_circuit.num_qubits)
-    # obs = obs[len(obs)//2]
-
-    print(obs)
 
     start = time.time()
     result = maestro_circuit.estimate(
