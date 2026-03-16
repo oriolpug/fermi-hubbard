@@ -105,15 +105,16 @@ class FermiHubbardModel:
         qc.rz(2.0 * angle, q_down)
         qc.cx(q_up, q_down)
 
-def generate_qasm_circuit(config: dict = {'n_sites': 100, 't': T_HOP, 'u': U_INT}, path = None):
+def generate_qasm_circuit(config: dict = {'n_sites': 50, 't': T_HOP, 'u': U_INT}, path = None):
     model = FermiHubbardModel(n_sites=config['n_sites'], t=config['t'], u=config['u'])  # makes a n_sites/2-qubit circuit
 
     qiskit_circuit = model.build_circuit(
         steps=N_STEPS,
         dt=T_EVOLUTION / N_STEPS,
         init_wall_idx=model.n_sites // 2,
-        active_sites_range=[38,61],  # known from scouting
+        active_sites_range=[20,30],  # known from scouting
     )
+    print(f"{qiskit_circuit.num_qubits} qubits")
 
     qasm_str = qasm2.dumps(qiskit_circuit)
     if not path:
