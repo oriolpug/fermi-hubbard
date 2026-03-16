@@ -125,7 +125,11 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
     from qibo.symbols import Z
     from qibo.hamiltonians import SymbolicHamiltonian
 
-    qibo_obs = SymbolicHamiltonian(Z(num_qubits//2), backend=cpu_backend)
+    qibo_obs = SymbolicHamiltonian(
+        Z(num_qubits//2),
+        nqubits=num_qubits,
+        backend=cpu_backend
+    )
 
     # FIX: Cast the CuPy GPU array back to a host NumPy array for the CPU backend.
     cpu_state = cp.asnumpy(raw_state_vector)
