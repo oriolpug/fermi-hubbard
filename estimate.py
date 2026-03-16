@@ -78,7 +78,8 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
         "MPS_enabled": {
             "svd_method": {
                 "abs_cutoff": 0.0,
-                "max_extent": chi
+                "max_extent": chi,
+                "qr_method": False
             }
         }
     }
