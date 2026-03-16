@@ -119,7 +119,17 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
     elapsed = time.time() - start
 
     raw_state_vector = state_result.state()
-    result = float(qibo_obs.expectation(raw_state_vector).real)
+    from qibo.backends import NumpyBackend
+    cpu_backend = NumpyBackend()
+
+    from qibo.symbols import Z
+    from qibo.hamiltonians import SymbolicHamiltonian
+
+    qibo_obs = SymbolicHamiltonian(Z(num_qubits//2), backend=cpu_backend)
+
+    # FIX: Cast the CuPy GPU array back to a host NumPy array for the CPU backend.
+    cpu_state = cp.asnumpy(raw_state_vector)
+    result = float(qibo_obs.expectation(cpu_state).real)
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
     print(f"    expectation values: {result}")
