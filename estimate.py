@@ -40,12 +40,12 @@ def expect_pennylane(config: dict = None, chi: int = 64) -> None:
         dev = qml.device("lightning.tensor", wires=num_qubits, method="mps", max_bond_dim=chi)
 
         @qml.qnode(dev)
-        def circuit(i):
+        def circuit():
             qml_circuit()
-            return qml.expval(qml.PauliZ(i))
+            return [qml.expval(qml.PauliZ(i)) for i in range(num_qubits)]
 
         start = time.time()
-        result = circuit(num_qubits // 2)
+        result = circuit()
         elapsed = time.time() - start
     else:
         dev = qml.device("default.tensor", wires=num_qubits, method="mps", max_bond_dim=chi)
