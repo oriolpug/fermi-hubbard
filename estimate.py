@@ -6,6 +6,7 @@ import sys
 
 import cupy as cp
 import cuquantum
+import traceback
 
 from generate_qasm import generate_qasm_circuit
 from qiskit import QuantumCircuit
@@ -153,4 +154,4 @@ if __name__ == "__main__":
             expect_qibo(chi=64)
             expect_qibo(chi=256)
     except Exception as e:
-        print(e)
+        traceback.print_exc()
