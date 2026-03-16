@@ -115,10 +115,11 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
     qibo_obs = SymbolicHamiltonian(Z(num_qubits//2), backend=qibo.get_backend())
 
     start = time.time()
-    state = qibo_circuit()
+    state_result = qibo_circuit()
     elapsed = time.time() - start
 
-    result = float(qibo_obs.expectation(state).real)
+    raw_state_vector = state_result.state()
+    result = float(qibo_obs.expectation(raw_state_vector).real)
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
     print(f"    expectation values: {result}")
