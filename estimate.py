@@ -78,10 +78,7 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
                 "max_extent": chi  # The max bond dimension limit
             }
         },
-        "expectation_enabled": {}
     }
-
-    computation_settings["expectation_enabled"]["pauli_string_pattern"] = obs
 
     import qibotn.backends.cutensornet
     qibotn.backends.cutensornet.cuquantum = cuquantum
@@ -108,12 +105,16 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
     #     # Leave this empty to populate it in your loop
     #     "expectation_enabled": {}
     # }
+    from qibo.symbols import Z
+    from qibo.hamiltonians import SymbolicHamiltonian
 
-
+    qibo_obs = SymbolicHamiltonian(Z(num_qubits//2), backend=qibo.get_backend())
 
     start = time.time()
-    result = qibo_circuit()
+    state = qibo_circuit()
     elapsed = time.time() - start
+
+    result = float(qibo_obs.expectation(state).real)
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
     print(f"    expectation values: {result}")
