@@ -4,7 +4,9 @@ Use Pennylane instead of Maestro to estimate the expectation value
 import time
 import sys
 
-from benchmark import _build_z_observables
+import cupy as cp
+import cuquantum
+
 from generate_qasm import generate_qasm_circuit
 from qiskit import QuantumCircuit
 
