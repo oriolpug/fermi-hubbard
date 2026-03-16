@@ -82,6 +82,11 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
     }
 
     computation_settings["expectation_enabled"]["pauli_string_pattern"] = obs
+
+    import qibotn.backends.cutensornet
+    qibotn.backends.cutensornet.cuquantum = cuquantum
+    qibotn.backends.cutensornet.cp = cp
+
     qibo.set_backend(
         backend="qibotn",
         platform="cutensornet",
