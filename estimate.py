@@ -146,15 +146,17 @@ def expect_maestro(config: dict = None, chi: int = 64) -> None:
     obs = _build_z_observables(maestro_circuit.num_qubits)
     obs = obs[len(obs)//2]
 
-    print(f"    [Diagnostic] Maestro parsed {len(maestro_circuit.operations)} gates.")
+    # print(f"    [Diagnostic] Maestro parsed {len(maestro_circuit.operations)} gates.")
 
     start = time.time()
-    result = maestro_circuit.estimate(
+    result = maestro.simple_estimate(
+        circuit=qasm,
         observables=obs,
         simulator_type=maestro.SimulatorType.Gpu if "--gpu" in sys.argv else maestro.SimulatorType.QCSim,
         simulation_type=maestro.SimulationType.MatrixProductState,
         max_bond_dimension=chi
     )
+
     elapsed = time.time() - start
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
