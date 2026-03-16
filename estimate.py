@@ -133,7 +133,7 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
 
     # FIX: Cast the CuPy GPU array back to a host NumPy array for the CPU backend.
     cpu_state = cp.asnumpy(raw_state_vector)
-    result = float(qibo_obs.expectation(cpu_state).real)
+    result = float(qibo_obs.expectation(cpu_state, normalize=True).real)
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
     print(f"    expectation values: {result}")
@@ -145,6 +145,8 @@ def expect_maestro(config: dict = None, chi: int = 64) -> None:
 
     obs = _build_z_observables(maestro_circuit.num_qubits)
     obs = obs[len(obs)//2]
+
+    print(f"    [Diagnostic] Maestro parsed {len(maestro_circuit.operations)} gates.")
 
     start = time.time()
     result = maestro_circuit.estimate(
