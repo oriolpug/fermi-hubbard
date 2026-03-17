@@ -39,25 +39,17 @@ def expect_pennylane(config: dict = None, chi: int = 64) -> None:
     if "--gpu" in sys.argv:
         dev = qml.device("lightning.tensor", wires=num_qubits, method="mps", max_bond_dim=chi)
 
-        @qml.qnode(dev)
-        def circuit():
-            qml_circuit()
-            return [qml.expval(qml.PauliZ(i)) for i in range(num_qubits)]
-
-        start = time.time()
-        result = circuit()
-        elapsed = time.time() - start
     else:
         dev = qml.device("default.tensor", wires=num_qubits, method="mps", max_bond_dim=chi)
 
-        @qml.qnode(dev)
-        def circuit(i):
-            qml_circuit()
-            return qml.expval(qml.Z(i))
+    @qml.qnode(dev)
+    def circuit():
+        qml_circuit()
+        return [qml.expval(qml.PauliZ(i)) for i in range(num_qubits)]
 
-        start = time.time()
-        result = circuit(num_qubits // 2)
-        elapsed = time.time() - start
+    start = time.time()
+    result = circuit()
+    elapsed = time.time() - start
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
     print(f"    expectation values: {result}")
