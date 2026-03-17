@@ -163,7 +163,7 @@ def expect_qmatchatea(config: dict = None, chi: int = 64) -> None:
 
     obs = _build_z_observables(num_qubits)
 
-    backend = qibo.set_backend(
+    qibo.set_backend(
         backend="qibotn",
         platform="qmatchatea",
     )
@@ -172,6 +172,12 @@ def expect_qmatchatea(config: dict = None, chi: int = 64) -> None:
 
     from qmatchatea import QCConvergenceParameters
 
+    backend = qibo.get_backend()
+    if "--gpu" in sys.argv:
+        qibo.set_device("/GPU:0")
+    else:
+        qibo.set_device("/CPU:0")
+
     backend.configure_tn_simulation(
         ansatz="MPS",
         convergence_params=QCConvergenceParameters(max_bond_dimension=chi)
@@ -179,11 +185,6 @@ def expect_qmatchatea(config: dict = None, chi: int = 64) -> None:
 
     from qibo.symbols import Z
     from qibo.hamiltonians import SymbolicHamiltonian
-
-    if "--gpu" in sys.argv:
-        qibo.set_device("/GPU:0")
-    else:
-        qibo.set_device("/CPU:0")
 
     start = time.time()
     state_result = backend.execute_circuit(qibo_circuit)
