@@ -85,11 +85,6 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
         runcard=computation_settings
     )
 
-    if "--gpu" in sys.argv:
-        qibo.set_device("/GPU:0")
-    else:
-        qibo.set_device("/CPU:0")
-
     qibo_circuit = qibo.Circuit.from_qasm(qasm)
     #
     # computation_settings = {
@@ -100,6 +95,11 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
     #     # Leave this empty to populate it in your loop
     #     "expectation_enabled": {}
     # }
+
+    if "--gpu" in sys.argv:
+        qibo.set_device("/GPU:0")
+    else:
+        qibo.set_device("/CPU:0")
 
     if num_qubits <= 32:
         from qibo.symbols import Z
@@ -137,6 +137,11 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
                 runcard=computation_settings
             )
 
+            if "--gpu" in sys.argv:
+                qibo.set_device("/GPU:0")
+            else:
+                qibo.set_device("/CPU:0")
+
             exp_val = qibo_circuit()
 
             # Safely extract the real float value (handles CuPy scalars, NumPy scalars, or raw floats)
@@ -172,6 +177,36 @@ def expect_maestro(config: dict = None, chi: int = 64) -> None:
     print(f"    expectation values: {result}")
 
     return elapsed
+
+def expect_qiskit(config: dict = None, chi: int = 64) -> None:
+    import qiskit
+    import qiskit_aer
+    from qiskit_aer.primitives import EstimatorV2 as Estimator
+
+    qasm = generate_qasm_circuit()
+    qiskit_circuit = qiskit.QuantumCircuit.from_qasm_str(qasm)
+
+    obs = _build_z_observables(qiskit_circuit.num_qubits)
+    options = {
+        "backend_options": {
+            "method": "matrix_product_state",
+            # You can optionally configure MPS-specific options here, such as:
+            "matrix_product_state_max_bond_dimension": chi
+        },
+        "run_options": {'shots': 1024}, # same as Maestro's default
+    }
+
+    estimator = Estimator(options=options)
+
+    pub = (qiskit_circuit, obs)
+    start = time.time()
+    job = estimator.run([pub])
+    result = job.result()[0]
+    elapsed = time.time() - start
+
+    print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
+    print(f"    expectation values: {result}")
+
 if __name__ == "__main__":
     try:
         if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] in ["--gpu", "--pennylane"]) or (len(sys.argv) > 2 and "--pennylane" in sys.argv):
