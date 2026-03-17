@@ -202,6 +202,7 @@ def expect_qiskit(config: dict = None, chi: int = 64) -> None:
     start = time.time()
     job = estimator.run([pub])
     result = job.result()[0]
+    result = result.data
     elapsed = time.time() - start
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
