@@ -279,7 +279,7 @@ if __name__ == "__main__":
         if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] in ["--gpu", "--qmatchatea"]) or (len(sys.argv) > 2 and "--qmatchatea" in sys.argv):
             print(f"Benchmarking Qmatchatea")
             import qibo
-            expect_qiskit(chi=64)
-            expect_qiskit(chi=256)
+            expect_qmatchatea(chi=64)
+            expect_qmatchatea(chi=256)
     except Exception as e:
         traceback.print_exc()
