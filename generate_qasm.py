@@ -6,7 +6,7 @@ U_INT = 1.0          # On-site interaction U — using U/t=1 (metallic regime)
 T_EVOLUTION = 5.0    # Evolution time. The light cone grows as v_LR * T ≈ 2t * T.
                      # T=5 gives a genuine ~20-site active region (40 qubits),
                      # past statevector limits. Increase to 20 for production.
-N_STEPS = 10         # Trotter steps (dt = 0.1, good accuracy for t=1.0)
+N_STEPS = 1          # Trotter steps (dt = 0.1, good accuracy for t=1.0)
 from qiskit import QuantumCircuit, qasm2
 
 class FermiHubbardModel:
@@ -105,14 +105,14 @@ class FermiHubbardModel:
         qc.rz(2.0 * angle, q_down)
         qc.cx(q_up, q_down)
 
-def generate_qasm_circuit(config: dict = {'n_sites': 50, 't': T_HOP, 'u': U_INT}, path = None):
+def generate_qasm_circuit(config: dict = {'n_sites': 100, 't': T_HOP, 'u': U_INT}, path = None):
     model = FermiHubbardModel(n_sites=config['n_sites'], t=config['t'], u=config['u'])  # makes a n_sites/2-qubit circuit
 
     qiskit_circuit = model.build_circuit(
         steps=N_STEPS,
         dt=T_EVOLUTION / N_STEPS,
         init_wall_idx=model.n_sites // 2,
-        active_sites_range=[19,31],  # known from scouting
+        active_sites_range=[39,61],  # known from scouting
     )
     print(f"{qiskit_circuit.num_qubits} qubits")
 
