@@ -6,7 +6,7 @@ U_INT = 1.0          # On-site interaction U — using U/t=1 (metallic regime)
 T_EVOLUTION = 5.0    # Evolution time. The light cone grows as v_LR * T ≈ 2t * T.
                      # T=5 gives a genuine ~20-site active region (40 qubits),
                      # past statevector limits. Increase to 20 for production.
-N_STEPS = 1         # Trotter steps (dt = 0.1, good accuracy for t=1.0)
+N_STEPS = 10         # Trotter steps (dt = 0.1, good accuracy for t=1.0)
 from qiskit import QuantumCircuit, qasm2
 
 class FermiHubbardModel:
