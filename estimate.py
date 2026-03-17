@@ -51,7 +51,7 @@ def expect_pennylane(config: dict = None, chi: int = 64) -> None:
     result = circuit()
     elapsed = time.time() - start
 
-    print(f" chi = {chi}:   Completed in {elapsed:.5f}s")
+    print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
     print(f"    expectation values: {result}")
 
     return
@@ -146,7 +146,7 @@ def expect_maestro(config: dict = None, chi: int = 64) -> None:
     )
     elapsed = time.time() - start
 
-    print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
+    print(f" chi = {chi}:   Completed in {elapsed:.5f}s")
     print(f"    expectation values: {result}")
 
     return elapsed
