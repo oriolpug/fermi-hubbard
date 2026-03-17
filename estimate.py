@@ -180,7 +180,7 @@ def expect_qmatchatea(config: dict = None, chi: int = 64) -> None:
 
     backend.configure_tn_simulation(
         ansatz="MPS",
-        convergence_parameters=QCConvergenceParameters(max_bond_dimension=chi)
+        convergence_params=QCConvergenceParameters(max_bond_dimension=chi)
     )
 
     from qibo.symbols import Z
