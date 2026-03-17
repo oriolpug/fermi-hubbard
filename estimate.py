@@ -178,10 +178,16 @@ def expect_qmatchatea(config: dict = None, chi: int = 64) -> None:
     else:
         qibo.set_device("/CPU:0")
 
-    backend.configure_tn_simulation(
-        ansatz="MPS",
-        convergence_params=QCConvergenceParameters(max_bond_dimension=chi)
-    )
+        # Save the original __init__ method
+        original_init = qmatchatea.QCConvergenceParameters.__init__
+
+        # Create an interceptor that overwrites the attribute after initialization
+        def patched_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            self.max_bond_dimension = chi  # Force our chi!
+
+        # Apply the patch globally
+        qmatchatea.QCConvergenceParameters.__init__ = patched_init
 
     from qibo.symbols import Z
     from qibo.hamiltonians import SymbolicHamiltonian
