@@ -61,7 +61,6 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
     num_qubits = QuantumCircuit.from_qasm_str(qasm).num_qubits
 
     obs = _build_z_observables(num_qubits)
-    obs = obs[num_qubits // 2]
 
     computation_settings = {
         "MPI_enabled": False,
@@ -101,31 +100,54 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
     #     # Leave this empty to populate it in your loop
     #     "expectation_enabled": {}
     # }
-    from qibo.symbols import Z
-    from qibo.hamiltonians import SymbolicHamiltonian
 
-    qibo_obs = SymbolicHamiltonian(Z(num_qubits//2), backend=qibo.get_backend())
+    if num_qubits <= 32:
+        from qibo.symbols import Z
+        from qibo.hamiltonians import SymbolicHamiltonian
 
-    start = time.time()
-    state_result = qibo_circuit()
-    elapsed = time.time() - start
+        start = time.time()
+        state_result = qibo_circuit()
+        elapsed = time.time() - start
 
-    raw_state_vector = state_result.state()
-    from qibo.backends import NumpyBackend
-    cpu_backend = NumpyBackend()
+        raw_state_vector = state_result.state()
+        from qibo.backends import NumpyBackend
+        cpu_backend = NumpyBackend()
 
-    from qibo.symbols import Z
-    from qibo.hamiltonians import SymbolicHamiltonian
+        from qibo.symbols import Z
+        from qibo.hamiltonians import SymbolicHamiltonian
 
-    qibo_obs = [SymbolicHamiltonian(
-        Z(i),
-        nqubits=num_qubits,
-        backend=cpu_backend
-    ) for i in range(num_qubits)]
+        qibo_obs = [SymbolicHamiltonian(
+            Z(i),
+            nqubits=num_qubits,
+            backend=cpu_backend
+        ) for i in range(num_qubits)]
 
-    # FIX: Cast the CuPy GPU array back to a host NumPy array for the CPU backend.
-    cpu_state = cp.asnumpy(raw_state_vector)
-    result = [float(qibo_obs[i].expectation(cpu_state, normalize=True).real) for i in range(num_qubits)]
+        # FIX: Cast the CuPy GPU array back to a host NumPy array for the CPU backend.
+        cpu_state = cp.asnumpy(raw_state_vector)
+        result = [float(qibo_obs[i].expectation(cpu_state, normalize=True).real) for i in range(num_qubits)]
+    else:
+        # Run one expectation value and multiply times the number of qubits
+        result = []
+        for pauli_str in obs:
+            computation_settings["expectation_enabled"] = {"pauli_string_pattern": pauli_str}
+
+            qibo.set_backend(
+                backend="qibotn",
+                platform="cutensornet",
+                runcard=computation_settings
+            )
+
+            exp_val = qibo_circuit()
+
+            # Safely extract the real float value (handles CuPy scalars, NumPy scalars, or raw floats)
+            if hasattr(exp_val, 'get'):
+                val = float(exp_val.get().real)
+            elif hasattr(exp_val, 'real'):
+                val = float(exp_val.real)
+            else:
+                val = float(exp_val)
+
+            result.append(val)
 
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
     print(f"    expectation values: {result}")
