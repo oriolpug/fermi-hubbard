@@ -226,5 +226,10 @@ if __name__ == "__main__":
             import qibo
             expect_qibo(chi=64)
             expect_qibo(chi=256)
+
+        if len(sys.argv) == 1 or (len(sys.argv) == 2 and sys.argv[1] in ["--gpu", "--qiskit"]) or (len(sys.argv) > 2 and "--qiskit" in sys.argv):
+            print(f"Benchmarking Qiskit")
+            expect_qiskit(chi=64)
+            expect_qiskit(chi=256)
     except Exception as e:
         traceback.print_exc()
