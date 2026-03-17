@@ -157,6 +157,49 @@ def expect_qibo(config: dict = None, chi: int = 64) -> None:
     print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
     print(f"    expectation values: {result}")
 
+def expect_qmatchatea(config: dict = None, chi: int = 64) -> None:
+    qasm = generate_qasm_circuit()
+    num_qubits = QuantumCircuit.from_qasm_str(qasm).num_qubits
+
+    obs = _build_z_observables(num_qubits)
+
+    backend = qibo.set_backend(
+        backend="qibotn",
+        platform="qmatchatea",
+    )
+
+    if "--gpu" in sys.argv:
+        qibo.set_device("/GPU:0")
+    else:
+        qibo.set_device("/CPU:0")
+
+    qibo_circuit = qibo.Circuit.from_qasm(qasm)
+
+    from qmatchatea import QCConvergenceParameters
+
+    backend.configure_tn_simulation(
+        ansatz="MPS",
+        convergence_params=QCConvergenceParameters(max_bond_dimension=chi)
+    )
+
+    from qibo.symbols import Z
+    from qibo.hamiltonians import SymbolicHamiltonian
+
+    start = time.time()
+    state_result = backend.execute_circuit(qibo_circuit)
+
+    result = []
+    for i in range(num_qubits):
+        qibo_obs = SymbolicHamiltonian(Z(i), nqubits=num_qubits, backend=backend)
+
+        val = qibo_obs.expectation(state_result.state())
+        result.append(float(val.real if hasattr(val, 'real') else val))
+
+    elapsed = time.time() - start
+
+    print(f" chi = {chi}:   Completed in {elapsed:.2f}s")
+    print(f"    expectation values: {result}")
+
 def expect_maestro(config: dict = None, chi: int = 64) -> None:
     qasm = generate_qasm_circuit()
     parser = maestro.QasmToCirc()
