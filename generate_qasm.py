@@ -112,7 +112,7 @@ def generate_qasm_circuit(config: dict = {'n_sites': 100, 't': T_HOP, 'u': U_INT
         steps=N_STEPS,
         dt=T_EVOLUTION / N_STEPS,
         init_wall_idx=model.n_sites // 2,
-        active_sites_range=[39,61],  # known from scouting
+        active_sites_range=[39,62],  # known from scouting
     )
     print(f"{qiskit_circuit.num_qubits} qubits")
 
