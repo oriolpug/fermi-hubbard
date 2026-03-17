@@ -168,11 +168,6 @@ def expect_qmatchatea(config: dict = None, chi: int = 64) -> None:
         platform="qmatchatea",
     )
 
-    if "--gpu" in sys.argv:
-        qibo.set_device("/GPU:0")
-    else:
-        qibo.set_device("/CPU:0")
-
     qibo_circuit = qibo.Circuit.from_qasm(qasm)
 
     from qmatchatea import QCConvergenceParameters
@@ -184,6 +179,11 @@ def expect_qmatchatea(config: dict = None, chi: int = 64) -> None:
 
     from qibo.symbols import Z
     from qibo.hamiltonians import SymbolicHamiltonian
+
+    if "--gpu" in sys.argv:
+        qibo.set_device("/GPU:0")
+    else:
+        qibo.set_device("/CPU:0")
 
     start = time.time()
     state_result = backend.execute_circuit(qibo_circuit)
