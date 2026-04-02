@@ -78,12 +78,14 @@ def create_model(args):
 
 
 def make_backend(backend_mode: str, shots: int):
-    """Create a QoroService backend for the chosen target."""
-    if backend_mode == "hardware":
-        return QoroService(job_config=JobConfig(qpu_system="superconducting_qpus", shots=shots, use_circuit_packing=False))
-    return QoroService(
-        job_config=JobConfig(simulator_cluster="qoro_maestro", shots=shots)
-    )
+    """Create a backend for the chosen target."""
+    match backend_mode:
+        case "hardware":
+            return QoroService(job_config=JobConfig(qpu_system="superconducting_qpus", shots=shots, use_circuit_packing=False))
+        case "sim":
+            return QoroService(job_config=JobConfig(simulator_cluster="qoro_maestro", shots=shots))
+        case "maestro":
+            return MaestroSimulator(shots=shots)
 
 
 # =============================================================================
@@ -112,8 +114,8 @@ def main():
         help="Observable type: 'z' per-qubit, 'zz' nearest-neighbor, 'density' per-site occupation"
     )
     parser.add_argument(
-        "--backend", choices=["hardware", "sim"], default="sim",
-        help="'hardware' for QPU, 'sim' for Qoro simulator cluster"
+        "--backend", choices=["hardware", "sim", "maestro"], default="sim",
+        help="'hardware' for QPU, 'sim' for Qoro simulator cluster, 'maestro' for local MaestroSimulator"
     )
     parser.add_argument(
         "--dry-run", action="store_true",
@@ -124,7 +126,8 @@ def main():
     n_steps = args.n_steps
     dt = args.dt
     total_time = n_steps * dt
-    backend_label = "QPU" if args.backend == "hardware" else "Qoro Sim Cluster"
+    backend_labels = {"hardware": "QPU", "sim": "Qoro Sim Cluster", "maestro": "MaestroSimulator (local)"}
+    backend_label = backend_labels[args.backend]
     obs_labels = {"z": "⟨Zᵢ⟩", "zz": "⟨ZᵢZⱼ⟩", "density": "⟨nᵢ⟩"}
     obs_label = obs_labels[args.obs]
 
