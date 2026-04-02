@@ -584,3 +584,49 @@ class FermiHubbardHexModel:
                 self._add_interaction_term(circuit, up_offset + i, down_offset + i, dt)
 
         return circuit
+
+class TFIMModel:
+    """
+    1D Transverse-Field Ising Model.
+
+    Hamiltonian: H = -J Σ ZᵢZᵢ₊₁ - h Σ Xᵢ
+
+    One qubit per site. Domain wall initial state: left half spin-up.
+    """
+
+    def __init__(self, n_sites, j=1.0, h=0.5):
+        self.n_sites = n_sites
+        self.n_qubits = n_sites
+        self.j = j
+        self.h = h
+
+    def hamiltonian(self):
+        """Build the 1D TFIM Hamiltonian: H = -J Σ ZᵢZᵢ₊₁ - h Σ Xᵢ."""
+        coeffs = []
+        ops = []
+        for i in range(self.n_sites - 1):
+            coeffs.append(-self.j)
+            ops.append(qml.Z(i) @ qml.Z(i + 1))
+        for i in range(self.n_sites):
+            coeffs.append(-self.h)
+            ops.append(qml.X(i))
+        return qml.Hamiltonian(coeffs, ops)
+
+    def domain_wall_bitstring(self):
+        wall = self.n_sites // 2
+        return "1" * wall + "0" * (self.n_sites - wall)
+
+    def build_observables(self, obs_type):
+        if obs_type == "z":
+            return [(f"Z_{i}", qml.Z(i)) for i in range(self.n_sites)]
+        elif obs_type == "zz":
+            return [
+                (f"Z_{i}Z_{i+1}", qml.Z(i) @ qml.Z(i + 1))
+                for i in range(self.n_sites - 1)
+            ]
+        elif obs_type == "density":
+            return [(f"Z_{i}", qml.Z(i)) for i in range(self.n_sites)]
+        raise ValueError(f"Unknown obs_type: {obs_type}")
+
+    def description(self):
+        return f"1D TFIM, {self.n_sites} sites ({self.n_qubits} qubits), J={self.j}, h={self.h}"

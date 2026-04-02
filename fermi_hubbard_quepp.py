@@ -51,7 +51,7 @@ from divi.pipeline.stages import (
 )
 from divi.qprog import TimeEvolution
 from divi.qprog.algorithms import CustomPerQubitState
-from model import FermiHubbardChainModel, FermiHubbardSquareModel, FermiHubbardHexModel
+from model import FermiHubbardChainModel, FermiHubbardSquareModel, FermiHubbardHexModel, TFIMModel
 
 console = Console()
 
@@ -70,6 +70,8 @@ def create_model(args):
             return FermiHubbardSquareModel(args.n_sites_x, args.n_sites_y, t=args.hopping, u=args.u_int)
         case "hex":
             return FermiHubbardHexModel(args.n_sites_x, args.n_sites_y, t=args.hopping, u=args.u_int)
+        case "tfim":
+            return TFIMModel(n_sites=args.n_sites, j=args.hopping, h=args.u_int)
 
 
 # =============================================================================
@@ -98,7 +100,7 @@ def main():
         description="Fermi-Hubbard Time Evolution + QuEPP Error Mitigation"
     )
     parser.add_argument(
-        "--topology", choices=["chain", "square", "hex"], default="chain",
+        "--topology", choices=["chain", "square", "hex", "tfim"], default="chain",
         help="Lattice topology (default: chain)"
     )
     parser.add_argument("--n-sites", type=int, default=8, help="Number of sites for 1D chain")
