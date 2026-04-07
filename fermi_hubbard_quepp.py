@@ -51,7 +51,11 @@ from divi.pipeline.stages import (
 )
 from divi.qprog import TimeEvolution
 from divi.qprog.algorithms import CustomPerQubitState
-from model import FermiHubbardChainModel, FermiHubbardSquareModel, FermiHubbardHexModel, TFIMModel
+from model import (
+    FermiHubbardChainModel, FermiHubbardSquareModel, FermiHubbardHexModel,
+    FermiHubbardChainProxyModel, FermiHubbardSquareProxyModel, FermiHubbardHexProxyModel,
+    TFIMModel,
+)
 
 console = Console()
 
@@ -70,6 +74,12 @@ def create_model(args):
             return FermiHubbardSquareModel(args.n_sites_x, args.n_sites_y, t=args.hopping, u=args.u_int)
         case "hex":
             return FermiHubbardHexModel(args.n_sites_x, args.n_sites_y, t=args.hopping, u=args.u_int)
+        case "chain-proxy":
+            return FermiHubbardChainProxyModel(n_sites=args.n_sites, t=args.hopping, u=args.u_int)
+        case "square-proxy":
+            return FermiHubbardSquareProxyModel(args.n_sites_x, args.n_sites_y, t=args.hopping, u=args.u_int)
+        case "hex-proxy":
+            return FermiHubbardHexProxyModel(args.n_sites_x, args.n_sites_y, t=args.hopping, u=args.u_int)
         case "tfim":
             return TFIMModel(n_sites=args.n_sites, j=args.hopping, h=args.u_int)
 
@@ -100,7 +110,11 @@ def main():
         description="Fermi-Hubbard Time Evolution + QuEPP Error Mitigation"
     )
     parser.add_argument(
-        "--topology", choices=["chain", "square", "hex", "tfim"], default="chain",
+        "--topology", choices=[
+            "chain", "square", "hex",
+            "chain-proxy", "square-proxy", "hex-proxy",
+            "tfim",
+        ], default="chain",
         help="Lattice topology (default: chain)"
     )
     parser.add_argument("--n-sites", type=int, default=8, help="Number of sites for 1D chain")
@@ -118,6 +132,10 @@ def main():
     parser.add_argument(
         "--backend", choices=["hardware", "sim", "maestro"], default="sim",
         help="'hardware' for QPU, 'sim' for Qoro simulator cluster, 'maestro' for local MaestroSimulator"
+    )
+    parser.add_argument(
+        "--no-quepp", action="store_true",
+        help="Skip QuEPP phase (run only classical reference + raw execution)"
     )
     parser.add_argument(
         "--dry-run", action="store_true",
@@ -259,25 +277,21 @@ def main():
     # -----------------------------------------------------------------
     # Phase 3: QPU / Sim + QuEPP error mitigation — batched
     # -----------------------------------------------------------------
-    quepp_vals, quepp_time = run_batch(
-        quepp_pipeline,
-        make_backend(args.backend, args.shots),
-        f"Phase 3: {backend_label} + QuEPP",
-    )
+    if not args.no_quepp:
+        quepp_vals, quepp_time = run_batch(
+            quepp_pipeline,
+            make_backend(args.backend, args.shots),
+            f"Phase 3: {backend_label} + QuEPP",
+        )
 
     # -----------------------------------------------------------------
     # Summary
     # -----------------------------------------------------------------
     exact_arr = np.array(exact_vals)
     noisy_arr = np.array(noisy_vals)
-    quepp_arr = np.array(quepp_vals)
 
-    noisy_mse = np.mean((noisy_arr - exact_arr) ** 2)
-    quepp_mse = np.mean((quepp_arr - exact_arr) ** 2)
-    noisy_mae = np.mean(np.abs(noisy_arr - exact_arr))
-    quepp_mae = np.mean(np.abs(quepp_arr - exact_arr))
-    mse_pct = (1 - quepp_mse / noisy_mse) * 100 if noisy_mse > 1e-12 else 0
-    mae_pct = (1 - quepp_mae / noisy_mae) * 100 if noisy_mae > 1e-12 else 0
+    noisy_mse = float(np.mean((noisy_arr - exact_arr) ** 2))
+    noisy_mae = float(np.mean(np.abs(noisy_arr - exact_arr)))
 
     # Per-observable profile
     console.print(f"\n[bold]Observable Profile {obs_label}:[/bold]")
@@ -285,53 +299,62 @@ def main():
     profile.add_column("Observable", justify="center")
     profile.add_column("Exact", justify="right")
     profile.add_column("Raw", justify="right")
-    profile.add_column("QuEPP", justify="right")
     profile.add_column("Raw Err", justify="right")
-    profile.add_column("QuEPP Err", justify="right")
+    if not args.no_quepp:
+        profile.add_column("QuEPP", justify="right")
+        profile.add_column("QuEPP Err", justify="right")
 
     for i, (lbl, _) in enumerate(observables):
         n_err = abs(noisy_vals[i] - exact_vals[i])
-        q_err = abs(quepp_vals[i] - exact_vals[i])
-        style = "green" if q_err < n_err else ("yellow" if q_err == n_err else "red")
-        profile.add_row(
-            lbl,
-            f"{exact_vals[i]:+.4f}",
-            f"{noisy_vals[i]:+.4f}",
-            f"{quepp_vals[i]:+.4f}",
-            f"{n_err:.4f}",
-            f"[{style}]{q_err:.4f}[/{style}]",
-        )
+        row = [lbl, f"{exact_vals[i]:+.4f}", f"{noisy_vals[i]:+.4f}", f"{n_err:.4f}"]
+        if not args.no_quepp:
+            q_err = abs(quepp_vals[i] - exact_vals[i])
+            style = "green" if q_err < n_err else ("yellow" if q_err == n_err else "red")
+            row.extend([f"{quepp_vals[i]:+.4f}", f"[{style}]{q_err:.4f}[/{style}]"])
+        profile.add_row(*row)
     console.print(profile)
 
     # Aggregate metrics
-    summary = Table(title=f"Fermi-Hubbard {model.description()} {obs_label} — {backend_label}")
+    summary = Table(title=f"{model.description()} {obs_label} — {backend_label}")
     summary.add_column("Metric", style="bold")
     summary.add_column("Raw", justify="right")
-    summary.add_column("QuEPP", justify="right")
-    summary.add_column("Improvement", justify="right")
 
-    mse_s = "green" if quepp_mse < noisy_mse else "red"
-    mae_s = "green" if quepp_mae < noisy_mae else "red"
+    if not args.no_quepp:
+        quepp_arr = np.array(quepp_vals)
+        quepp_mse = float(np.mean((quepp_arr - exact_arr) ** 2))
+        quepp_mae = float(np.mean(np.abs(quepp_arr - exact_arr)))
+        mse_pct = (1 - quepp_mse / noisy_mse) * 100 if noisy_mse > 1e-12 else 0
+        mae_pct = (1 - quepp_mae / noisy_mae) * 100 if noisy_mae > 1e-12 else 0
 
-    summary.add_row(
-        "MSE", f"{noisy_mse:.6f}",
-        f"[{mse_s}]{quepp_mse:.6f}[/{mse_s}]",
-        f"[{mse_s}]{mse_pct:.0f}%[/{mse_s}]",
-    )
-    summary.add_row(
-        "MAE", f"{noisy_mae:.6f}",
-        f"[{mae_s}]{quepp_mae:.6f}[/{mae_s}]",
-        f"[{mae_s}]{mae_pct:.0f}%[/{mae_s}]",
-    )
+        summary.add_column("QuEPP", justify="right")
+        summary.add_column("Improvement", justify="right")
+
+        mse_s = "green" if quepp_mse < noisy_mse else "red"
+        mae_s = "green" if quepp_mae < noisy_mae else "red"
+        summary.add_row(
+            "MSE", f"{noisy_mse:.6f}",
+            f"[{mse_s}]{quepp_mse:.6f}[/{mse_s}]",
+            f"[{mse_s}]{mse_pct:.0f}%[/{mse_s}]",
+        )
+        summary.add_row(
+            "MAE", f"{noisy_mae:.6f}",
+            f"[{mae_s}]{quepp_mae:.6f}[/{mae_s}]",
+            f"[{mae_s}]{mae_pct:.0f}%[/{mae_s}]",
+        )
+    else:
+        summary.add_row("MSE", f"{noisy_mse:.6f}")
+        summary.add_row("MAE", f"{noisy_mae:.6f}")
     console.print(summary)
 
-    console.print(
+    timing = (
         f"\n[dim]Observables: {n_obs} | "
         f"Shots: {args.shots:,} | "
-        f"Timing: exact {exact_time:.0f}s, "
-        f"raw {noisy_time:.0f}s, "
-        f"QuEPP {quepp_time:.0f}s[/dim]"
+        f"Timing: exact {exact_time:.0f}s, raw {noisy_time:.0f}s"
     )
+    if not args.no_quepp:
+        timing += f", QuEPP {quepp_time:.0f}s"
+    timing += "[/dim]"
+    console.print(timing)
 
 
 if __name__ == "__main__":

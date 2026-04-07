@@ -630,3 +630,218 @@ class TFIMModel:
 
     def description(self):
         return f"1D TFIM, {self.n_sites} sites ({self.n_qubits} qubits), J={self.j}, h={self.h}"
+
+
+# =============================================================================
+# PROXY MODELS — Clifford-compatible Hamiltonians for QuEPP
+# =============================================================================
+#
+# These replace the full Fermi-Hubbard hopping (XX + YY) and interaction
+# terms with ZZ-only proxies.  The Trotterized circuits decompose to
+# CX-Rz-CX (Pauli rotations), which QuEPP / Stim can handle.
+#
+# The proxy preserves the bond connectivity and qubit layout of the
+# original model, so observables and initial states are identical.
+# =============================================================================
+
+
+def _proxy_hamiltonian(n_sites, bonds, t, u):
+    """Build a ZZ-proxy Hamiltonian on the Fermi-Hubbard qubit layout.
+
+    Hopping proxy:  -t Z_{q1} Z_{q2}  per bond, both spin sectors.
+    Interaction proxy:  (U/4)(I - Z_up - Z_down + Z_up Z_down) per site
+                        (same as the true FH interaction — it's already
+                        diagonal in Z, so no proxy needed).
+    """
+    coeffs = []
+    ops = []
+    up_offset = 0
+    down_offset = n_sites
+
+    # Hopping proxy: ZZ per bond
+    for s1, s2 in bonds:
+        for offset in [up_offset, down_offset]:
+            q1, q2 = offset + s1, offset + s2
+            coeffs.append(-t)
+            ops.append(qml.Z(q1) @ qml.Z(q2))
+
+    # Interaction: identical to true FH (already Pauli-diagonal)
+    for i in range(n_sites):
+        q_up = up_offset + i
+        q_down = down_offset + i
+        coeffs.append(u / 4)
+        ops.append(qml.Identity(q_up))
+        coeffs.append(-u / 4)
+        ops.append(qml.PauliZ(q_up))
+        coeffs.append(-u / 4)
+        ops.append(qml.PauliZ(q_down))
+        coeffs.append(u / 4)
+        ops.append(qml.prod(qml.PauliZ(q_up), qml.PauliZ(q_down)))
+
+    return qml.Hamiltonian(coeffs, ops)
+
+
+class FermiHubbardChainProxyModel:
+    """
+    Clifford-compatible proxy for the 1D Fermi-Hubbard chain.
+
+    Replaces XX+YY hopping with ZZ, keeping the same bond structure.
+    Produces circuits that QuEPP can process (Pauli rotations only).
+    """
+
+    def __init__(self, n_sites, t=1.0, u=4.0):
+        self.n_sites = n_sites
+        self.t = t
+        self.u = u
+        self.n_qubits = 2 * n_sites
+
+    def _get_bonds(self):
+        return [(i, i + 1) for i in range(self.n_sites - 1)]
+
+    def hamiltonian(self):
+        return _proxy_hamiltonian(self.n_sites, self._get_bonds(), self.t, self.u)
+
+    def domain_wall_bitstring(self):
+        half = self.n_sites // 2
+        sector = "1" * half + "0" * (self.n_sites - half)
+        return sector + sector
+
+    def build_observables(self, obs_type):
+        if obs_type == "z":
+            return [(f"Z_{i}", qml.Z(i)) for i in range(self.n_qubits)]
+        elif obs_type == "zz":
+            result = []
+            for i in range(self.n_sites - 1):
+                result.append((f"ZZ_up_{i}_{i+1}", qml.Z(i) @ qml.Z(i + 1)))
+            for i in range(self.n_sites - 1):
+                j = self.n_sites + i
+                result.append((f"ZZ_dn_{i}_{i+1}", qml.Z(j) @ qml.Z(j + 1)))
+            return result
+        elif obs_type == "density":
+            result = []
+            for i in range(self.n_sites):
+                result.append((f"n_up_{i}", qml.Z(i)))
+                result.append((f"n_dn_{i}", qml.Z(i + self.n_sites)))
+            return result
+        raise ValueError(f"Unknown obs_type: {obs_type}")
+
+    def description(self):
+        return f"1D chain proxy, {self.n_sites} sites ({self.n_qubits} qubits), t={self.t}, U={self.u}"
+
+
+class FermiHubbardSquareProxyModel:
+    """
+    Clifford-compatible proxy for the 2D square Fermi-Hubbard model.
+    """
+
+    def __init__(self, n_sites_x, n_sites_y, t=1.0, u=4.0):
+        self.n_sites_x = n_sites_x
+        self.n_sites_y = n_sites_y
+        self.n_sites = n_sites_x * n_sites_y
+        self.t = t
+        self.u = u
+        self.n_qubits = 2 * self.n_sites
+
+    def _site_index(self, x, y):
+        return y * self.n_sites_x + x
+
+    def _get_bonds(self):
+        bonds = []
+        for y in range(self.n_sites_y):
+            for x in range(self.n_sites_x):
+                if x + 1 < self.n_sites_x:
+                    bonds.append((self._site_index(x, y), self._site_index(x + 1, y)))
+                if y + 1 < self.n_sites_y:
+                    bonds.append((self._site_index(x, y), self._site_index(x, y + 1)))
+        return bonds
+
+    def hamiltonian(self):
+        return _proxy_hamiltonian(self.n_sites, self._get_bonds(), self.t, self.u)
+
+    def domain_wall_bitstring(self):
+        half = self.n_sites // 2
+        sector = "1" * half + "0" * (self.n_sites - half)
+        return sector + sector
+
+    def build_observables(self, obs_type):
+        if obs_type == "z":
+            return [(f"Z_{i}", qml.Z(i)) for i in range(self.n_qubits)]
+        elif obs_type == "zz":
+            result = []
+            for s1, s2 in self._get_bonds():
+                result.append((f"ZZ_up_{s1}_{s2}", qml.Z(s1) @ qml.Z(s2)))
+            for s1, s2 in self._get_bonds():
+                q1 = self.n_sites + s1
+                q2 = self.n_sites + s2
+                result.append((f"ZZ_dn_{s1}_{s2}", qml.Z(q1) @ qml.Z(q2)))
+            return result
+        elif obs_type == "density":
+            result = []
+            for i in range(self.n_sites):
+                result.append((f"n_up_{i}", qml.Z(i)))
+                result.append((f"n_dn_{i}", qml.Z(i + self.n_sites)))
+            return result
+        raise ValueError(f"Unknown obs_type: {obs_type}")
+
+    def description(self):
+        return (f"2D square proxy {self.n_sites_x}x{self.n_sites_y}, "
+                f"{self.n_sites} sites ({self.n_qubits} qubits), t={self.t}, U={self.u}")
+
+
+class FermiHubbardHexProxyModel:
+    """
+    Clifford-compatible proxy for the 2D honeycomb Fermi-Hubbard model.
+    """
+
+    def __init__(self, n_sites_x, n_sites_y, t=1.0, u=4.0):
+        self.n_sites_x = n_sites_x
+        self.n_sites_y = n_sites_y
+        self.n_sites = n_sites_x * n_sites_y
+        self.t = t
+        self.u = u
+        self.n_qubits = 2 * self.n_sites
+
+    def _site_index(self, x, y):
+        return y * self.n_sites_x + x
+
+    def _get_bonds(self):
+        bonds = []
+        for y in range(self.n_sites_y):
+            for x in range(self.n_sites_x):
+                if x + 1 < self.n_sites_x:
+                    bonds.append((self._site_index(x, y), self._site_index(x + 1, y)))
+                if y + 1 < self.n_sites_y and (x + y) % 2 == 0:
+                    bonds.append((self._site_index(x, y), self._site_index(x, y + 1)))
+        return bonds
+
+    def hamiltonian(self):
+        return _proxy_hamiltonian(self.n_sites, self._get_bonds(), self.t, self.u)
+
+    def domain_wall_bitstring(self):
+        half = self.n_sites // 2
+        sector = "1" * half + "0" * (self.n_sites - half)
+        return sector + sector
+
+    def build_observables(self, obs_type):
+        if obs_type == "z":
+            return [(f"Z_{i}", qml.Z(i)) for i in range(self.n_qubits)]
+        elif obs_type == "zz":
+            result = []
+            for s1, s2 in self._get_bonds():
+                result.append((f"ZZ_up_{s1}_{s2}", qml.Z(s1) @ qml.Z(s2)))
+            for s1, s2 in self._get_bonds():
+                q1 = self.n_sites + s1
+                q2 = self.n_sites + s2
+                result.append((f"ZZ_dn_{s1}_{s2}", qml.Z(q1) @ qml.Z(q2)))
+            return result
+        elif obs_type == "density":
+            result = []
+            for i in range(self.n_sites):
+                result.append((f"n_up_{i}", qml.Z(i)))
+                result.append((f"n_dn_{i}", qml.Z(i + self.n_sites)))
+            return result
+        raise ValueError(f"Unknown obs_type: {obs_type}")
+
+    def description(self):
+        return (f"2D honeycomb proxy {self.n_sites_x}x{self.n_sites_y}, "
+                f"{self.n_sites} sites ({self.n_qubits} qubits), t={self.t}, U={self.u}")
