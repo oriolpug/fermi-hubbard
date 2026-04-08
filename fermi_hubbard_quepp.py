@@ -141,6 +141,10 @@ def main():
         "--dry-run", action="store_true",
         help="Show circuit fan-out analysis without executing"
     )
+    parser.add_argument(
+        "--no-stim-normalization", action="store_true",
+        help="Skip stim gate normalization in QuEPP (disable decomposition of non-stim-compatible gates)"
+    )
     args = parser.parse_args()
 
     n_steps = args.n_steps
@@ -188,7 +192,8 @@ def main():
             observable=observables[0][1],
             backend=MaestroSimulator(shots=args.shots),
             qem_protocol=QuEPP(
-                sampling="exhaustive", truncation_order=3, n_twirls=10
+                sampling="exhaustive", truncation_order=3, n_twirls=10,
+                normalize_for_stim=not args.no_stim_normalization,
             ),
         )
         te_dry.dry_run()
@@ -235,7 +240,8 @@ def main():
             MeasurementStage(),
             QEMStage(
                 protocol=QuEPP(
-                    sampling="exhaustive", truncation_order=3, n_twirls=10
+                    sampling="exhaustive", truncation_order=3, n_twirls=10,
+                    normalize_for_stim=not args.no_stim_normalization,
                 )
             ),
             PauliTwirlStage(n_twirls=10),
