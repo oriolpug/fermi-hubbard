@@ -396,8 +396,21 @@ def main():
     # Dry run: scout + circuit fan-out, no execution
     # -----------------------------------------------------------------
     if args.dry_run:
-        console.print(f"\n[bold]Dry run -- circuit fan-out for one observable:[/bold]")
-        te_dry = TimeEvolution(
+        console.print(f"\n[bold]Dry run -- Raw (no error mitigation):[/bold]")
+        te_raw = TimeEvolution(
+            **common_kwargs,
+            observable=observables[0][1],
+            backend=MaestroSimulator(shots=args.shots),
+        )
+        fan_raw = te_raw.dry_run()
+        raw_per_obs = fan_raw if isinstance(fan_raw, int) else 1
+        console.print(
+            f"\n[bold]{raw_per_obs} circuits/observable x "
+            f"{n_obs} observables = {raw_per_obs * n_obs} total circuits (raw)[/bold]"
+        )
+
+        console.print(f"\n[bold]Dry run -- With QuEPP error mitigation:[/bold]")
+        te_quepp = TimeEvolution(
             **common_kwargs,
             observable=observables[0][1],
             backend=MaestroSimulator(shots=args.shots),
@@ -405,12 +418,11 @@ def main():
                 sampling="exhaustive", truncation_order=3, n_twirls=10
             ),
         )
-        fan_out = te_dry.dry_run()
-        circuits_per_obs = fan_out if isinstance(fan_out, int) else 110
-        total_circuits = circuits_per_obs * n_obs
+        fan_quepp = te_quepp.dry_run()
+        quepp_per_obs = fan_quepp if isinstance(fan_quepp, int) else 110
         console.print(
-            f"\n[bold]{circuits_per_obs} circuits/observable x "
-            f"{n_obs} observables = {total_circuits} total QPU circuits[/bold]"
+            f"\n[bold]{quepp_per_obs} circuits/observable x "
+            f"{n_obs} observables = {quepp_per_obs * n_obs} total circuits (QuEPP)[/bold]"
         )
         return
 
