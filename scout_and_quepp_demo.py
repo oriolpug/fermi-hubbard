@@ -327,6 +327,10 @@ def main():
         help="Backend for time evolution"
     )
     parser.add_argument("--no-quepp", action="store_true", help="Skip QuEPP phase")
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Run scout + show circuit fan-out analysis without executing"
+    )
     args = parser.parse_args()
 
     n_steps = args.n_steps
@@ -380,6 +384,33 @@ def main():
     console.print(f"\n[bold cyan]Phase 2: Time Evolution[/bold cyan] -- "
                   f"{sub_model.description()}")
     console.print(f"  Observables: {n_obs} x {args.obs}")
+
+    common_kwargs = dict(
+        hamiltonian=hamiltonian,
+        time=total_time,
+        n_steps=n_steps,
+        initial_state=initial_state,
+    )
+
+    # -----------------------------------------------------------------
+    # Dry run: scout + circuit fan-out, no execution
+    # -----------------------------------------------------------------
+    if args.dry_run:
+        console.print(f"\n[bold]Dry run -- circuit fan-out for one observable:[/bold]")
+        te_dry = TimeEvolution(
+            **common_kwargs,
+            observable=observables[0][1],
+            backend=MaestroSimulator(shots=args.shots),
+            qem_protocol=QuEPP(
+                sampling="exhaustive", truncation_order=3, n_twirls=10
+            ),
+        )
+        te_dry.dry_run()
+        console.print(
+            f"\n[dim]x {n_obs} observables = "
+            f"{n_obs} x (circuits per observable) total QPU circuits[/dim]"
+        )
+        return
 
     common_kwargs = dict(
         hamiltonian=hamiltonian,
