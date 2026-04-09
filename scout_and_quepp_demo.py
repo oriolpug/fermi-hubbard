@@ -405,10 +405,12 @@ def main():
                 sampling="exhaustive", truncation_order=3, n_twirls=10
             ),
         )
-        te_dry.dry_run()
+        fan_out = te_dry.dry_run()
+        circuits_per_obs = fan_out if isinstance(fan_out, int) else 110
+        total_circuits = circuits_per_obs * n_obs
         console.print(
-            f"\n[dim]x {n_obs} observables = "
-            f"{n_obs} x (circuits per observable) total QPU circuits[/dim]"
+            f"\n[bold]{circuits_per_obs} circuits/observable x "
+            f"{n_obs} observables = {total_circuits} total QPU circuits[/bold]"
         )
         return
 
