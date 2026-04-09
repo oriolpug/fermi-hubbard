@@ -1,6 +1,93 @@
+from collections import deque
+
 import numpy as np
 import pennylane as qml
 from maestro.circuits import QuantumCircuit
+
+
+def _bfs_distances(n_sites, bonds, start_sites):
+    """BFS distance from a set of start sites on the bond graph."""
+    adj = [[] for _ in range(n_sites)]
+    for s1, s2 in bonds:
+        adj[s1].append(s2)
+        adj[s2].append(s1)
+    dist = [-1] * n_sites
+    queue = deque()
+    for s in start_sites:
+        dist[s] = 0
+        queue.append(s)
+    while queue:
+        v = queue.popleft()
+        for u in adj[v]:
+            if dist[u] == -1:
+                dist[u] = dist[v] + 1
+                queue.append(u)
+    return dist
+
+
+def _build_clifford_scout_circuit_2d(n_sites, n_sites_x, bonds, steps, init_wall_idx):
+    """Build a Clifford-only scout circuit for 2D lattice light-cone detection.
+
+    Uses BFS distance from domain-wall boundary sites to expand the
+    Clifford gate window step-by-step, mimicking the Lieb-Robinson cone.
+
+    Works for any 2D lattice topology (square, honeycomb) — only the
+    bond list differs.
+    """
+    circuit = QuantumCircuit()
+
+    # State prep: domain wall (left half filled)
+    for i in range(init_wall_idx):
+        circuit.x(i)
+        circuit.x(i + n_sites)
+
+    # Identify domain-wall boundary: sites with a neighbor on the other side
+    adj = [[] for _ in range(n_sites)]
+    for s1, s2 in bonds:
+        adj[s1].append(s2)
+        adj[s2].append(s1)
+
+    boundary = set()
+    for s1, s2 in bonds:
+        if (s1 < init_wall_idx) != (s2 < init_wall_idx):
+            boundary.add(s1)
+            boundary.add(s2)
+    if not boundary:
+        boundary = {max(0, init_wall_idx - 1), min(n_sites - 1, init_wall_idx)}
+
+    dist = _bfs_distances(n_sites, bonds, boundary)
+
+    up_offset = 0
+    down_offset = n_sites
+
+    even_bonds = bonds[0::2]
+    odd_bonds = bonds[1::2]
+
+    for step in range(steps):
+        radius = step + 1
+
+        # Even bonds within window: H-CX-H
+        for s1, s2 in even_bonds:
+            if dist[s1] <= radius and dist[s2] <= radius:
+                circuit.h(up_offset + s1)
+                circuit.cx(up_offset + s1, up_offset + s2)
+                circuit.h(up_offset + s1)
+                circuit.h(down_offset + s1)
+                circuit.cx(down_offset + s1, down_offset + s2)
+                circuit.h(down_offset + s1)
+
+        # Odd bonds within window: CX
+        for s1, s2 in odd_bonds:
+            if dist[s1] <= radius and dist[s2] <= radius:
+                circuit.cx(up_offset + s1, up_offset + s2)
+                circuit.cx(down_offset + s1, down_offset + s2)
+
+        # On-site interaction within window: CZ
+        for i in range(n_sites):
+            if dist[i] <= radius:
+                circuit.cz(up_offset + i, down_offset + i)
+
+    return circuit
 
 
 def _jw_hopping_ops(q1, q2):
@@ -402,6 +489,13 @@ class FermiHubbardSquareModel:
 
         return circuit
 
+    def build_clifford_scout_circuit(self, steps, init_wall_idx):
+        """Build a Clifford-only circuit for 2D light-cone detection."""
+        return _build_clifford_scout_circuit_2d(
+            self.n_sites, self.n_sites_x, self._get_bonds(),
+            steps, init_wall_idx,
+        )
+
 
 class FermiHubbardHexModel:
     """
@@ -584,6 +678,14 @@ class FermiHubbardHexModel:
                 self._add_interaction_term(circuit, up_offset + i, down_offset + i, dt)
 
         return circuit
+
+    def build_clifford_scout_circuit(self, steps, init_wall_idx):
+        """Build a Clifford-only circuit for 2D light-cone detection."""
+        return _build_clifford_scout_circuit_2d(
+            self.n_sites, self.n_sites_x, self._get_bonds(),
+            steps, init_wall_idx,
+        )
+
 
 class TFIMModel:
     """
