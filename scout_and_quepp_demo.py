@@ -24,8 +24,10 @@ Usage:
 """
 
 import argparse
+import os
 import time
 
+import matplotlib.pyplot as plt
 import maestro
 import numpy as np
 import pennylane as qml
@@ -188,6 +190,74 @@ def make_backend(backend_mode, shots):
             ))
         case "maestro":
             return MaestroSimulator(shots=shots)
+
+
+# =============================================================================
+# VISUALIZATION
+# =============================================================================
+
+
+def plot_results(observables, exact_vals, noisy_vals, quepp_vals,
+                 obs_type, model_desc, backend_label):
+    """Plot exact vs raw vs QuEPP expectation values with error annotation."""
+    labels = [lbl for lbl, _ in observables]
+    n = len(labels)
+    x = np.arange(n)
+
+    exact_arr = np.array(exact_vals)
+    noisy_arr = np.array(noisy_vals)
+    noisy_mae = float(np.mean(np.abs(noisy_arr - exact_arr)))
+
+    has_quepp = quepp_vals is not None
+    n_panels = 2 if has_quepp else 1
+    fig, axes = plt.subplots(1, n_panels, figsize=(7 * n_panels, 5), squeeze=False)
+
+    # --- Panel 1: expectation values ---
+    ax = axes[0, 0]
+    ax.plot(x, exact_vals, 'o-', color='#2C3E50', markersize=5, linewidth=1.5,
+            label='Exact (statevector)', zorder=3)
+    ax.plot(x, noisy_vals, 's--', color='#E74C3C', markersize=4, linewidth=1.2,
+            alpha=0.8, label=f'{backend_label} (raw)')
+    if has_quepp:
+        ax.plot(x, quepp_vals, 'D--', color='#27AE60', markersize=4, linewidth=1.2,
+                alpha=0.8, label=f'{backend_label} + QuEPP')
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=90, fontsize=7)
+    ax.set_ylabel('Expectation value')
+    ax.set_title(f'{model_desc}\nObservable: {obs_type}')
+    ax.legend(fontsize=8)
+    ax.grid(axis='y', alpha=0.3)
+
+    # --- Panel 2: per-observable error bars ---
+    if has_quepp:
+        quepp_arr = np.array(quepp_vals)
+        quepp_mae = float(np.mean(np.abs(quepp_arr - exact_arr)))
+
+        raw_err = np.abs(noisy_arr - exact_arr)
+        quepp_err = np.abs(quepp_arr - exact_arr)
+
+        ax2 = axes[0, 1]
+        w = 0.35
+        ax2.bar(x - w / 2, raw_err, width=w, color='#E74C3C', alpha=0.7, label='Raw error')
+        ax2.bar(x + w / 2, quepp_err, width=w, color='#27AE60', alpha=0.7, label='QuEPP error')
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(labels, rotation=90, fontsize=7)
+        ax2.set_ylabel('|error|')
+        ax2.legend(fontsize=8)
+        ax2.grid(axis='y', alpha=0.3)
+
+        mae_improvement = (1 - quepp_mae / noisy_mae) * 100 if noisy_mae > 1e-12 else 0
+        color = '#27AE60' if mae_improvement > 0 else '#E74C3C'
+        ax2.set_title(
+            f'Per-observable error\n'
+            f'{mae_improvement:+.0f}% MAE improvement from QuEPP',
+            color=color, fontweight='bold',
+        )
+
+    fig.tight_layout()
+    out_path = os.path.join(os.path.dirname(__file__) or '.', 'scout_quepp_results.png')
+    fig.savefig(out_path, dpi=150)
+    console.print(f"\nSaved plot to {out_path}")
 
 
 # =============================================================================
@@ -424,6 +494,14 @@ def main():
         timing += f", QuEPP {quepp_time:.0f}s"
     timing += "[/dim]"
     console.print(timing)
+
+    # =================================================================
+    # Plot
+    # =================================================================
+    plot_results(
+        observables, exact_vals, noisy_vals, quepp_vals,
+        args.obs, sub_model.description(), backend_label,
+    )
 
 
 if __name__ == "__main__":
