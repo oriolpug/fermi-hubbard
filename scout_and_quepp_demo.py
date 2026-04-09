@@ -57,7 +57,7 @@ SCOUT_THRESHOLD = 0.001
 # =============================================================================
 
 
-def run_scout_2d(model, init_wall_idx):
+def run_scout_2d(model, init_wall_idx, total_time):
     """Run the Clifford Pauli-Propagator scout on the full 2D lattice.
 
     Returns:
@@ -72,9 +72,10 @@ def run_scout_2d(model, init_wall_idx):
     console.print(f"\n[bold cyan]Phase 1: Scout[/bold cyan] -- "
                   f"Pauli Propagator on {n_qubits} qubits ({nx}x{ny} grid)")
 
-    # Calibrate steps: light cone radius ~ 2t * T, 2 sites per step
-    t_evolution = 5.0
-    light_cone_radius = 2.0 * model.t * t_evolution
+    # Calibrate steps to the Lieb-Robinson light cone for the actual
+    # evolution time.  Each step expands the BFS window by 1, so
+    # scout_steps ≈ light_cone_radius to avoid covering the whole grid.
+    light_cone_radius = 2.0 * model.t * total_time
     scout_steps = max(2, int(light_cone_radius / 2) + 1)
 
     scout_circuit = model.build_clifford_scout_circuit(
@@ -253,7 +254,7 @@ def main():
     # =================================================================
     # Phase 1: Scout
     # =================================================================
-    active_sites, bbox, scout_time = run_scout_2d(full_model, init_wall_idx)
+    active_sites, bbox, scout_time = run_scout_2d(full_model, init_wall_idx, total_time)
 
     # =================================================================
     # Phase 2: Time evolution on active sub-lattice via Divi
