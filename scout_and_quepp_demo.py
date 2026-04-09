@@ -392,25 +392,6 @@ def main():
         initial_state=initial_state,
     )
 
-    # Build a single MetaCircuit with all observables measured together.
-    # All Z / ZZ / density observables are diagonal in the computational
-    # basis (qubit-wise commuting), so MeasurementStage groups them into
-    # one measurement group — one circuit execution yields all values.
-    def build_meta():
-        te = TimeEvolution(
-            **common_kwargs,
-            observable=observables[0][1],
-            backend=MaestroSimulator(shots=args.shots),
-        )
-        processed_ham = te.trotterization_strategy.process_hamiltonian(
-            te._hamiltonian
-        )
-        ops = te._build_ops(processed_ham)
-        ops = [qml.Identity(w) for w in te._circuit_wires] + ops
-        all_measurements = [qml.expval(obs) for _, obs in observables]
-        tape = qml.tape.QuantumScript(ops=ops, measurements=all_measurements)
-        return MetaCircuit(source_circuit=tape, symbols=np.array([], dtype=object))
-
     # -----------------------------------------------------------------
     # Dry run: scout + circuit fan-out, no execution
     # -----------------------------------------------------------------
@@ -421,8 +402,12 @@ def main():
             observable=observables[0][1],
             backend=MaestroSimulator(shots=args.shots),
         )
-        te_raw.dry_run()
-        console.print(f"  [dim]{n_obs} observables measured in a single circuit[/dim]")
+        fan_raw = te_raw.dry_run()
+        raw_per_obs = fan_raw if isinstance(fan_raw, int) else 1
+        console.print(
+            f"\n[bold]{raw_per_obs} circuits/observable x "
+            f"{n_obs} observables = {raw_per_obs * n_obs} total circuits (raw)[/bold]"
+        )
 
         console.print(f"\n[bold]Dry run -- With QuEPP error mitigation:[/bold]")
         te_quepp = TimeEvolution(
@@ -433,12 +418,36 @@ def main():
                 sampling="exhaustive", truncation_order=3, n_twirls=10
             ),
         )
-        te_quepp.dry_run()
-        console.print(f"  [dim]{n_obs} observables measured in a single circuit[/dim]")
+        fan_quepp = te_quepp.dry_run()
+        quepp_per_obs = fan_quepp if isinstance(fan_quepp, int) else 110
+        console.print(
+            f"\n[bold]{quepp_per_obs} circuits/observable x "
+            f"{n_obs} observables = {quepp_per_obs * n_obs} total circuits (QuEPP)[/bold]"
+        )
         return
 
-    meta = build_meta()
-    metas = [meta]
+    def build_metas():
+        metas = []
+        for label, obs in observables:
+            te = TimeEvolution(
+                **common_kwargs,
+                observable=obs,
+                backend=MaestroSimulator(shots=args.shots),
+            )
+            processed_ham = te.trotterization_strategy.process_hamiltonian(
+                te._hamiltonian
+            )
+            ops = te._build_ops(processed_ham)
+            ops = [qml.Identity(w) for w in te._circuit_wires] + ops
+            tape = qml.tape.QuantumScript(
+                ops=ops, measurements=[qml.expval(obs)]
+            )
+            metas.append(MetaCircuit(
+                source_circuit=tape, symbols=np.array([], dtype=object)
+            ))
+        return metas
+
+    metas = build_metas()
 
     base_pipeline = CircuitPipeline(
         stages=[CircuitSpecStage(), MeasurementStage()]
