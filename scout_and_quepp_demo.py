@@ -133,10 +133,23 @@ def run_scout_2d(model, init_wall_idx, total_time):
 
     # ASCII grid diagram
     # Legend: # = active, . = frozen (filled half), o = frozen (empty half)
-    #         [ ] = bounding box border
+    #         [ ] = bounding box border, --- = domain wall
     console.print(f"\n  [bold]Lattice ({nx}x{ny}):[/bold]  "
-                  "[dim]# active  . frozen-filled  o frozen-empty  [ ] bbox[/dim]")
+                  "[dim]# active  . frozen-filled  o frozen-empty  "
+                  "[ ] bbox  --- domain wall[/dim]")
+
+    # The domain wall sits between the last filled row and first empty row.
+    # wall_row = first row that contains any site >= init_wall_idx.
+    wall_row = init_wall_idx // nx
+
     for y in range(ny):
+        # Domain wall separator line between rows
+        if y == wall_row:
+            sep = "  "
+            for x in range(nx):
+                sep += "[bold red]---[/bold red]"
+            console.print(sep)
+
         row = "  "
         for x in range(nx):
             s = y * nx + x
