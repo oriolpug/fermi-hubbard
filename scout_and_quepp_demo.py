@@ -130,7 +130,32 @@ def run_scout_2d(model, init_wall_idx, total_time):
     console.print(f"  Bounding box: x=[{x_min},{x_max}) y=[{y_min},{y_max}) "
                   f"-> {sub_nx}x{sub_ny} = {sub_nx * sub_ny} sites "
                   f"({2 * sub_nx * sub_ny} qubits)")
-    console.print(f"  [dim]Scout completed in {elapsed:.2f}s[/dim]")
+
+    # ASCII grid diagram
+    # Legend: # = active, . = frozen (filled half), o = frozen (empty half)
+    #         [ ] = bounding box border
+    console.print(f"\n  [bold]Lattice ({nx}x{ny}):[/bold]  "
+                  "[dim]# active  . frozen-filled  o frozen-empty  [ ] bbox[/dim]")
+    for y in range(ny):
+        row = "  "
+        for x in range(nx):
+            s = y * nx + x
+            in_bbox = x_min <= x < x_max and y_min <= y < y_max
+            if s in active_sites:
+                ch = "[bold green]#[/bold green]"
+            elif s < init_wall_idx:
+                ch = "[dim].[/dim]"
+            else:
+                ch = "[dim]o[/dim]"
+            if in_bbox and (x == x_min or x == x_max - 1
+                            or y == y_min or y == y_max - 1):
+                ch = f"[cyan]\\[[/cyan]{ch}[cyan]][/cyan]"
+            else:
+                ch = f" {ch} "
+            row += ch
+        console.print(row)
+
+    console.print(f"\n  [dim]Scout completed in {elapsed:.2f}s[/dim]")
 
     return active_sites, (x_min, y_min, x_max, y_max), elapsed
 
