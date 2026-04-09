@@ -50,7 +50,7 @@ from model import FermiHubbardSquareModel, FermiHubbardHexModel
 
 console = Console()
 
-SAFETY_MARGIN = 1
+SAFETY_MARGIN = 0
 SCOUT_THRESHOLD = 0.001
 
 
