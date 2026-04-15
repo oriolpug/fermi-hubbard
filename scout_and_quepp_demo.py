@@ -407,10 +407,10 @@ def main():
         )
         fan_raw = te_raw.dry_run()
         raw_per_obs = fan_raw if isinstance(fan_raw, int) else 1
-        console.print(
-            f"\n[bold]{raw_per_obs} circuits/observable x "
-            f"{n_obs} observables = {raw_per_obs * n_obs} total circuits (raw)[/bold]"
-        )
+        # console.print(
+        #     f"\n[bold]{raw_per_obs} circuits/observable x "
+        #     f"{n_obs} observables = {raw_per_obs * n_obs} total circuits (raw)[/bold]"
+        # )
 
         console.print(f"\n[bold]Dry run -- With QuEPP error mitigation:[/bold]")
         te_quepp = TimeEvolution(
