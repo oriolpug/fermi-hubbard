@@ -326,7 +326,7 @@ def main():
         help="Observable type"
     )
     parser.add_argument(
-        "--backend", choices=["hardware", "sim", "maestro"], default="maestro",
+        "--backend", choices=["hardware", "sim", "maestro", "qiskit"], default="maestro",
         help="Backend for time evolution"
     )
     parser.add_argument("--no-quepp", action="store_true", help="Skip QuEPP phase")
