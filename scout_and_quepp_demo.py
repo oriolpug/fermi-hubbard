@@ -402,20 +402,20 @@ def main():
         console.print(f"\n[bold]Dry run -- Raw (no error mitigation):[/bold]")
         te_raw = TimeEvolution(
             **common_kwargs,
-            observable=observables,
+            observable=observables[0],
             backend=MaestroSimulator(shots=args.shots),
         )
         fan_raw = te_raw.dry_run()
         raw_per_obs = fan_raw if isinstance(fan_raw, int) else 1
-        # console.print(
-        #     f"\n[bold]{raw_per_obs} circuits/observable x "
-        #     f"{n_obs} observables = {raw_per_obs * n_obs} total circuits (raw)[/bold]"
-        # )
+        console.print(
+            f"\n[bold]{raw_per_obs} circuits/observable x "
+            f"{n_obs} observables = {raw_per_obs * n_obs} total circuits (raw)[/bold]"
+        )
 
         console.print(f"\n[bold]Dry run -- With QuEPP error mitigation:[/bold]")
         te_quepp = TimeEvolution(
             **common_kwargs,
-            observable=observables,
+            observable=observables[0],
             backend=MaestroSimulator(shots=args.shots),
             qem_protocol=QuEPP(
                 sampling="exhaustive", truncation_order=3, n_twirls=10
