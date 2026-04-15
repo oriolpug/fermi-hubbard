@@ -341,7 +341,7 @@ def main():
     total_time = n_steps * dt
     backend_labels = {
         "hardware": "QPU", "sim": "Qoro Sim Cluster",
-        "maestro": "MaestroSimulator (local)",
+        "maestro": "MaestroSimulator (local)", "qiskit": "Qiskit Simulator (allows obs grouping)"
     }
     backend_label = backend_labels[args.backend]
 
