@@ -34,7 +34,7 @@ import pennylane as qml
 from rich.console import Console
 from rich.table import Table
 
-from divi.backends import JobConfig, MaestroSimulator, QoroService
+from divi.backends import JobConfig, MaestroSimulator, QoroService, QiskitSimulator
 from divi.circuits import MetaCircuit
 from divi.circuits.quepp import QuEPP
 from divi.pipeline import CircuitPipeline, PipelineEnv
@@ -228,6 +228,9 @@ def make_backend(backend_mode, shots):
             ))
         case "maestro":
             return MaestroSimulator(shots=shots)
+
+        case "qiskit":
+            return QiskitSimulator(shots=shots, force_sampling=True)
 
 
 # =============================================================================
