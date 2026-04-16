@@ -301,6 +301,42 @@ class FermiHubbardChainModel:
 
         return circuit
 
+    def build_clifford_scout_circuit(self, steps, init_wall_idx):
+        """Build a Clifford-only circuit for 1D light-cone detection.
+
+        Expanding window grows by 1 site per step from the domain wall,
+        mimicking the Lieb-Robinson causal light cone.
+        """
+        circuit = QuantumCircuit()
+
+        for i in range(init_wall_idx):
+            circuit.x(i)
+            circuit.x(i + self.n_sites)
+
+        up_offset = 0
+        down_offset = self.n_sites
+
+        for step in range(steps):
+            lc_start = max(0, init_wall_idx - step - 1)
+            lc_end = min(self.n_sites, init_wall_idx + step + 2)
+
+            for i in range(max(0, lc_start), lc_end - 1, 2):
+                circuit.h(up_offset + i)
+                circuit.cx(up_offset + i, up_offset + i + 1)
+                circuit.h(up_offset + i)
+                circuit.h(down_offset + i)
+                circuit.cx(down_offset + i, down_offset + i + 1)
+                circuit.h(down_offset + i)
+
+            for i in range(max(1, lc_start | 1), lc_end - 1, 2):
+                circuit.cx(up_offset + i, up_offset + i + 1)
+                circuit.cx(down_offset + i, down_offset + i + 1)
+
+            for i in range(lc_start, lc_end):
+                circuit.cz(up_offset + i, down_offset + i)
+
+        return circuit
+
 
 class FermiHubbardSquareModel:
     """
