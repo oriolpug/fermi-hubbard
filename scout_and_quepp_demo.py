@@ -1,25 +1,26 @@
 """
-2D Fermi-Hubbard: Scout + Divi Pipeline
-========================================
+Fermi-Hubbard: Scout + Divi Pipeline
+=====================================
 
-Two-phase adaptive simulation for 2D Fermi-Hubbard lattices:
+Two-phase adaptive simulation for Fermi-Hubbard models:
 
   Phase 1 -- Scout (Pauli Propagator, CPU):
-      Runs a Clifford-only proxy on the FULL 2D lattice to detect which
+      Runs a Clifford-only proxy on the FULL system to detect which
       sites have non-trivial dynamics via the Lieb-Robinson light cone.
-      Returns a bounding box of active sites.
+      Returns an active range (1D) or bounding box (2D).
 
   Phase 2 -- Time Evolution (Divi pipeline, user-chosen backend):
-      Builds a sub-model on the active bounding box and runs Trotterized
+      Builds a sub-model on the active region and runs Trotterized
       time evolution through the Divi CircuitPipeline, optionally with
       QuEPP error mitigation.
 
-Supports square and honeycomb lattice topologies.
+Supports 1D chain, 2D square, and 2D honeycomb lattice topologies.
 
 Usage:
+    python scout_and_quepp_demo.py --topology chain --n-sites 40
     python scout_and_quepp_demo.py --topology square --n-sites-x 8 --n-sites-y 8
     python scout_and_quepp_demo.py --topology hex --n-sites-x 6 --n-sites-y 4
-    python scout_and_quepp_demo.py --topology square --n-sites-x 10 --n-sites-y 10 --backend sim
+    python scout_and_quepp_demo.py --topology chain --n-sites 100 --backend sim
     python scout_and_quepp_demo.py --backend maestro --no-quepp --obs density
 """
 
@@ -46,7 +47,7 @@ from divi.pipeline.stages import (
 )
 from divi.qprog import TimeEvolution
 from divi.qprog.algorithms import CustomPerQubitState
-from model import FermiHubbardSquareModel, FermiHubbardHexModel
+from model import FermiHubbardChainModel, FermiHubbardSquareModel, FermiHubbardHexModel
 
 console = Console()
 
@@ -173,42 +174,136 @@ def run_scout_2d(model, init_wall_idx, total_time):
     return active_sites, (x_min, y_min, x_max, y_max), elapsed
 
 
+def run_scout_1d(model, init_wall_idx, total_time):
+    """Run the Clifford Pauli-Propagator scout on a 1D chain.
+
+    Returns:
+        active_sites: set of site indices where dynamics were detected
+        active_range: (start, end) site indices
+        elapsed: wall-clock time
+    """
+    n_sites = model.n_sites
+    n_qubits = model.n_qubits
+
+    console.print(f"\n[bold cyan]Phase 1: Scout[/bold cyan] -- "
+                  f"Pauli Propagator on {n_qubits} qubits ({n_sites} sites)")
+
+    light_cone_radius = 2.0 * model.t * total_time
+    scout_steps = max(2, int(light_cone_radius / 2) + 1)
+
+    scout_circuit = model.build_clifford_scout_circuit(
+        steps=scout_steps, init_wall_idx=init_wall_idx
+    )
+
+    obs_list = []
+    for i in range(n_qubits):
+        pauli = ['I'] * n_qubits
+        pauli[i] = 'Z'
+        obs_list.append("".join(pauli))
+
+    t0 = time.time()
+    result = scout_circuit.estimate(
+        observables=obs_list,
+        simulator_type=maestro.SimulatorType.QCSim,
+        simulation_type=maestro.SimulationType.PauliPropagator,
+    )
+    elapsed = time.time() - t0
+
+    z_vals = result['expectation_values']
+
+    active_sites = set()
+    for i in range(n_sites):
+        initial_z = -1.0 if i < init_wall_idx else 1.0
+        if (abs(z_vals[i] - initial_z) > SCOUT_THRESHOLD or
+                abs(z_vals[n_sites + i] - initial_z) > SCOUT_THRESHOLD):
+            active_sites.add(i)
+
+    if not active_sites:
+        console.print("  [yellow]No active sites detected -- using sites around wall[/yellow]")
+        active_sites = {max(0, init_wall_idx - 1), min(n_sites - 1, init_wall_idx)}
+
+    start = max(0, min(active_sites) - SAFETY_MARGIN)
+    end = min(n_sites, max(active_sites) + 1 + SAFETY_MARGIN)
+    n_active = end - start
+
+    console.print(f"  Active sites: {len(active_sites)} / {n_sites}")
+    console.print(f"  Active range: [{start}, {end}) -> {n_active} sites ({2 * n_active} qubits)")
+
+    # ASCII chain diagram
+    console.print(f"\n  [bold]Chain ({n_sites} sites):[/bold]  "
+                  "[dim]# active  . frozen-filled  o frozen-empty  "
+                  "[ ] active range  | domain wall[/dim]")
+    row = "  "
+    for i in range(n_sites):
+        if i == init_wall_idx:
+            row += "[bold red]|[/bold red]"
+        in_range = start <= i < end
+        if i in active_sites:
+            ch = "[bold green]#[/bold green]"
+        elif i < init_wall_idx:
+            ch = "[dim].[/dim]"
+        else:
+            ch = "[dim]o[/dim]"
+        if in_range and (i == start or i == end - 1):
+            ch = f"[cyan]\\[[/cyan]{ch}[cyan]][/cyan]"
+        else:
+            ch = f" {ch} "
+        row += ch
+    console.print(row)
+
+    console.print(f"\n  [dim]Scout completed in {elapsed:.2f}s[/dim]")
+
+    return active_sites, (start, end), elapsed
+
+
 # =============================================================================
 # SUB-MODEL CONSTRUCTION
 # =============================================================================
 
 
-def build_sub_model(topology, bbox, full_model):
-    """Build a model on the active bounding-box sub-grid."""
-    x_min, y_min, x_max, y_max = bbox
+def build_sub_model(topology, region, full_model):
+    """Build a model on the active sub-region.
+
+    For chain: region is (start, end) site indices.
+    For 2D:    region is (x_min, y_min, x_max, y_max) bounding box.
+    """
+    if topology == "chain":
+        start, end = region
+        return FermiHubbardChainModel(end - start, t=full_model.t, u=full_model.u)
+    x_min, y_min, x_max, y_max = region
     sub_nx = x_max - x_min
     sub_ny = y_max - y_min
-
     if topology == "square":
         return FermiHubbardSquareModel(sub_nx, sub_ny, t=full_model.t, u=full_model.u)
-    else:
-        return FermiHubbardHexModel(sub_nx, sub_ny, t=full_model.t, u=full_model.u)
+    return FermiHubbardHexModel(sub_nx, sub_ny, t=full_model.t, u=full_model.u)
 
 
-def sub_grid_domain_wall_bitstring(bbox, full_nx, full_n_sites):
-    """Compute domain-wall bitstring for the sub-grid.
+def sub_region_domain_wall_bitstring(topology, region, full_model):
+    """Compute domain-wall bitstring for the active sub-region.
 
-    A sub-grid site (sx, sy) maps to full-grid linear index
-    (y_min + sy) * full_nx + (x_min + sx). It is filled ('1') if
-    that index < full_n_sites // 2.
+    Each sub-region site is mapped back to its full-grid linear index
+    to determine whether it is filled (< init_wall) or empty.
     """
-    x_min, y_min, x_max, y_max = bbox
-    sub_nx = x_max - x_min
-    sub_ny = y_max - y_min
-    init_wall = full_n_sites // 2
+    init_wall = full_model.n_sites // 2
 
+    if topology == "chain":
+        start, end = region
+        sector = "".join(
+            "1" if (start + i) < init_wall else "0"
+            for i in range(end - start)
+        )
+        return sector + sector
+
+    # 2D: bounding box
+    x_min, y_min, x_max, y_max = region
+    full_nx = full_model.n_sites_x
     sector = []
-    for sy in range(sub_ny):
-        for sx in range(sub_nx):
+    for sy in range(y_max - y_min):
+        for sx in range(x_max - x_min):
             full_idx = (y_min + sy) * full_nx + (x_min + sx)
             sector.append("1" if full_idx < init_wall else "0")
     sector_str = "".join(sector)
-    return sector_str + sector_str  # spin-up + spin-down
+    return sector_str + sector_str
 
 
 # =============================================================================
@@ -308,14 +403,15 @@ def plot_results(observables, exact_vals, noisy_vals, quepp_vals,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="2D Fermi-Hubbard: Scout + Divi Pipeline"
+        description="Fermi-Hubbard: Scout + Divi Pipeline"
     )
     parser.add_argument(
-        "--topology", choices=["square", "hex"], default="square",
+        "--topology", choices=["chain", "square", "hex"], default="square",
         help="Lattice topology (default: square)"
     )
-    parser.add_argument("--n-sites-x", type=int, default=8, help="Grid width")
-    parser.add_argument("--n-sites-y", type=int, default=8, help="Grid height")
+    parser.add_argument("--n-sites", type=int, default=20, help="Sites for 1D chain")
+    parser.add_argument("--n-sites-x", type=int, default=8, help="Grid width for 2D")
+    parser.add_argument("--n-sites-y", type=int, default=8, help="Grid height for 2D")
     parser.add_argument("--n-steps", type=int, default=1, help="Trotter steps")
     parser.add_argument("--dt", type=float, default=0.1, help="Trotter step size")
     parser.add_argument("--hopping", type=float, default=1.0, help="Hopping t")
@@ -346,19 +442,24 @@ def main():
     backend_label = backend_labels[args.backend]
 
     # ---- Build full model ----
-    if args.topology == "square":
-        full_model = FermiHubbardSquareModel(
-            args.n_sites_x, args.n_sites_y, t=args.hopping, u=args.u_int
-        )
-    else:
-        full_model = FermiHubbardHexModel(
-            args.n_sites_x, args.n_sites_y, t=args.hopping, u=args.u_int
-        )
+    match args.topology:
+        case "chain":
+            full_model = FermiHubbardChainModel(
+                args.n_sites, t=args.hopping, u=args.u_int
+            )
+        case "square":
+            full_model = FermiHubbardSquareModel(
+                args.n_sites_x, args.n_sites_y, t=args.hopping, u=args.u_int
+            )
+        case "hex":
+            full_model = FermiHubbardHexModel(
+                args.n_sites_x, args.n_sites_y, t=args.hopping, u=args.u_int
+            )
 
     init_wall_idx = full_model.n_sites // 2
 
     console.print(f"\n[bold cyan]{'=' * 65}[/bold cyan]")
-    console.print("[bold cyan]  2D Fermi-Hubbard: Scout + Divi Pipeline[/bold cyan]")
+    console.print("[bold cyan]  Fermi-Hubbard: Scout + Divi Pipeline[/bold cyan]")
     console.print(f"[bold cyan]{'=' * 65}[/bold cyan]")
     console.print(
         f"  Model: {full_model.description()}\n"
@@ -369,14 +470,21 @@ def main():
     # =================================================================
     # Phase 1: Scout
     # =================================================================
-    active_sites, bbox, scout_time = run_scout_2d(full_model, init_wall_idx, total_time)
+    if args.topology == "chain":
+        active_sites, region, scout_time = run_scout_1d(
+            full_model, init_wall_idx, total_time
+        )
+    else:
+        active_sites, region, scout_time = run_scout_2d(
+            full_model, init_wall_idx, total_time
+        )
 
     # =================================================================
-    # Phase 2: Time evolution on active sub-lattice via Divi
+    # Phase 2: Time evolution on active sub-region via Divi
     # =================================================================
-    sub_model = build_sub_model(args.topology, bbox, full_model)
-    bitstring = sub_grid_domain_wall_bitstring(
-        bbox, full_model.n_sites_x, full_model.n_sites
+    sub_model = build_sub_model(args.topology, region, full_model)
+    bitstring = sub_region_domain_wall_bitstring(
+        args.topology, region, full_model
     )
 
     hamiltonian = sub_model.hamiltonian()
