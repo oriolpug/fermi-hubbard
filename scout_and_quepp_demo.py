@@ -382,7 +382,6 @@ def main():
     hamiltonian = sub_model.hamiltonian()
     initial_state = CustomPerQubitState(bitstring)
     observables = sub_model.build_observables(args.obs)
-    observables_pass = [observable[1] for observable in observables]
     n_obs = len(observables)
 
     console.print(f"\n[bold cyan]Phase 2: Time Evolution[/bold cyan] -- "
@@ -403,7 +402,7 @@ def main():
         console.print(f"\n[bold]Dry run -- Raw (no error mitigation):[/bold]")
         te_raw = TimeEvolution(
             **common_kwargs,
-            observable=observables_pass,
+            observable=observables[0][1],
             backend=MaestroSimulator(shots=args.shots),
         )
         fan_raw = te_raw.dry_run()
@@ -416,7 +415,7 @@ def main():
         console.print(f"\n[bold]Dry run -- With QuEPP error mitigation:[/bold]")
         te_quepp = TimeEvolution(
             **common_kwargs,
-            observable=observables_pass,
+            observable=observables[0][1],
             backend=MaestroSimulator(shots=args.shots),
             qem_protocol=QuEPP(
                 sampling="exhaustive", truncation_order=3, n_twirls=10
