@@ -95,7 +95,7 @@ def make_backend(backend_mode: str, shots: int):
         case "hardware":
             return QoroService(job_config=JobConfig(qpu_system="superconducting_qpus", shots=shots, use_circuit_packing=False))
         case "sim":
-            return QoroService(job_config=JobConfig(simulator_cluster="qoro_maestro", shots=shots))
+            return QoroService(job_config=JobConfig(simulator_cluster="qoro_maestro_access", shots=shots))
         case "maestro":
             return MaestroSimulator(shots=shots)
 

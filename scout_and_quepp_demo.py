@@ -319,7 +319,7 @@ def make_backend(backend_mode, shots):
             ))
         case "sim":
             return QoroService(job_config=JobConfig(
-                simulator_cluster="qoro_maestro", shots=shots
+                simulator_cluster="qoro_maestro_access", shots=shots
             ))
         case "maestro":
             return MaestroSimulator(shots=shots)
